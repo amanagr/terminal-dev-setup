@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git push)"
+    ],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  },
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(npm prefix -g)/lib/node_modules/claude-remote-approver/bin/cli.mjs\" hook"
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "high",
+  "model": "claude-opus-4-6"
+}
