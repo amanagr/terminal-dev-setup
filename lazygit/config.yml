@@ -1,11 +1,52 @@
 gui:
+  nerdFontsVersion: "3"
+  showDivergenceFromBaseBranch: arrowAndNumber
+  filterMode: fuzzy
+  commitLength:
+    show: true
   theme:
     selectedLineBgColor:
       - "#313244"
     cherryPickedCommitFgColor:
       - "#89b4fa"
   branchColors: {}
+
 git:
+  autoFetch: true
+  autoStageResolvedConflicts: true
+  mainBranches:
+    - master
+    - main
+  log:
+    order: topo-order
+    showGraph: always
+  commit:
+    autoWrapCommitMessage: true
+    autoWrapWidth: 72
   pagers:
+    # Default: delta with side-by-side (cycle pagers with | key)
     - colorArg: always
-      pager: "delta --side-by-side --paging=never --dark --plus-style='syntax #1a3a1a' --minus-style='syntax #3a1a1a' --plus-emph-style='syntax #2d5a2d' --minus-emph-style='syntax #5a2d2d'"
+      pager: "delta --side-by-side --paging=never --dark --line-numbers --plus-style='syntax #1a3a1a' --minus-style='syntax #3a1a1a' --plus-emph-style='syntax #2d5a2d' --minus-emph-style='syntax #5a2d2d'"
+    # Alternate: difftastic for structural/AST-aware diffs
+    - externalDiffCommand: "difft --color=always --display=inline"
+
+os:
+  editPreset: nvim-remote
+
+customCommands:
+  # Open GitHub PR for current branch in browser
+  - key: "G"
+    command: "gh pr view -w {{.SelectedLocalBranch.Name}}"
+    context: "localBranches"
+    description: "Open GitHub PR in browser"
+
+  # Prune local branches whose upstream is gone
+  - key: "P"
+    command: >
+      git fetch -p && for branch in $(git for-each-ref
+      --format '%(refname) %(upstream:track)' refs/heads |
+      awk '$2 == "[gone]" {sub("refs/heads/", "", $1); print $1}');
+      do git branch -D $branch; done
+    context: "localBranches"
+    description: "Prune branches with deleted remotes"
+    loadingText: "Pruning..."

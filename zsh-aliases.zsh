@@ -1,3 +1,13 @@
+# =============================================================================
+# terminal-dev-setup aliases — sourced from .zshrc
+# Machine-specific overrides go in ~/.zshrc.local
+# =============================================================================
+
+# --- Starship prompt ---
+if command -v starship &>/dev/null; then
+    eval "$(starship init zsh)"
+fi
+
 # --- tmux shortcuts ---
 alias ta='tmux attach -t'
 alias tl='tmux list-sessions'
@@ -47,6 +57,20 @@ gls() {
 # Search code across git history
 ggrep() {
     git log --oneline -S "$1" -- "${2:-.}"
+}
+
+# Fixup a commit and auto-squash it in one step
+gfix() {
+    git commit --fixup="$1" && GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash "$1"~1
+}
+
+# Show divergence from a base branch
+gdiverg() {
+    local base="${1:-upstream/main}"
+    echo "Commits ahead of $base:"
+    git log --oneline "$base"..HEAD
+    echo "\nCommits behind $base:"
+    git log --oneline HEAD.."$base"
 }
 
 # --- lazygit ---
@@ -118,3 +142,6 @@ if [ -n "$TMUX" ]; then
         tmux rename-window "$(basename "$PWD")"
     }
 fi
+
+# Machine-specific overrides
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

@@ -62,6 +62,7 @@ APT_PACKAGES=(
     unzip
     build-essential
     zsh
+    fontconfig
 )
 
 sudo apt-get install -y "${APT_PACKAGES[@]}"
@@ -90,7 +91,6 @@ install_neovim() {
         current_version=$(nvim --version | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+')
     fi
 
-    # Only install if not present or version < 0.12
     if [ -n "$current_version" ] && [ "$(echo -e "0.12\n$current_version" | sort -V | tail -1)" = "$current_version" ]; then
         ok "Neovim $current_version already installed (>= 0.12)"
         return
@@ -136,7 +136,33 @@ install_lazygit() {
 install_lazygit
 
 # =============================================================================
-# 4. tree-sitter-cli (required by nvim-treesitter for parser compilation)
+# 4. Difftastic (structural diffs — used as alternate pager in lazygit)
+# =============================================================================
+install_difftastic() {
+    if command -v difft &>/dev/null; then
+        ok "difftastic already installed"
+        return
+    fi
+
+    info "Installing difftastic..."
+    local version
+    version=$(curl -fsSL "https://api.github.com/repos/Wilfred/difftastic/releases/latest" |
+              grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$version" ]; then
+        err "Could not determine difftastic latest version"
+        return 1
+    fi
+
+    local url="https://github.com/Wilfred/difftastic/releases/download/${version}/difft-x86_64-unknown-linux-gnu.tar.gz"
+    curl -fsSL "$url" | tar xz -C /tmp
+    sudo mv /tmp/difft /usr/local/bin/difft
+    ok "difftastic installed"
+}
+install_difftastic
+
+# =============================================================================
+# 5. tree-sitter-cli (required by nvim-treesitter for parser compilation)
 # =============================================================================
 install_tree_sitter_cli() {
     if command -v tree-sitter &>/dev/null; then
@@ -166,7 +192,32 @@ install_tree_sitter_cli() {
 install_tree_sitter_cli
 
 # =============================================================================
-# 5. npm packages (claude-remote-approver)
+# 6. Starship prompt
+# =============================================================================
+if ! command -v starship &>/dev/null; then
+    info "Installing Starship prompt..."
+    curl -sS https://starship.rs/install.sh | sh -s -- -y
+    ok "Starship installed"
+else
+    ok "Starship already installed"
+fi
+
+# =============================================================================
+# 7. JetBrains Mono Nerd Font
+# =============================================================================
+if ! fc-list | grep -qi "JetBrainsMono Nerd"; then
+    info "Installing JetBrains Mono Nerd Font..."
+    mkdir -p "$HOME/.local/share/fonts"
+    curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz" \
+        | tar xJ -C "$HOME/.local/share/fonts"
+    fc-cache -f
+    ok "JetBrains Mono Nerd Font installed"
+else
+    ok "JetBrains Mono Nerd Font already installed"
+fi
+
+# =============================================================================
+# 8. npm packages (claude-remote-approver)
 # =============================================================================
 if command -v npm &>/dev/null; then
     info "Installing global npm packages..."
@@ -180,7 +231,7 @@ else
 fi
 
 # =============================================================================
-# 6. Oh My Zsh
+# 9. Oh My Zsh + plugins
 # =============================================================================
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
     info "Installing Oh My Zsh..."
@@ -190,8 +241,24 @@ else
     ok "Oh My Zsh already installed"
 fi
 
+ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+
+# zsh-autosuggestions
+if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
+    info "Installing zsh-autosuggestions..."
+    git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+    ok "zsh-autosuggestions installed"
+fi
+
+# zsh-syntax-highlighting
+if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
+    info "Installing zsh-syntax-highlighting..."
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+    ok "zsh-syntax-highlighting installed"
+fi
+
 # =============================================================================
-# 7. TPM (tmux plugin manager)
+# 10. TPM (tmux plugin manager)
 # =============================================================================
 if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
     info "Installing TPM..."
@@ -201,8 +268,19 @@ else
     ok "TPM already installed"
 fi
 
+# Catppuccin tmux theme (manual install — avoids TPM name conflicts)
+CATPPUCCIN_TMUX_DIR="$HOME/.config/tmux/plugins/catppuccin"
+if [ ! -d "$CATPPUCCIN_TMUX_DIR/tmux" ]; then
+    info "Installing catppuccin tmux theme..."
+    mkdir -p "$CATPPUCCIN_TMUX_DIR"
+    git clone https://github.com/catppuccin/tmux.git "$CATPPUCCIN_TMUX_DIR/tmux"
+    ok "Catppuccin tmux theme installed"
+else
+    ok "Catppuccin tmux theme already installed"
+fi
+
 # =============================================================================
-# 8. Git config
+# 11. Git config
 # =============================================================================
 info "Configuring git..."
 
@@ -211,22 +289,44 @@ git config --global core.pager "delta"
 git config --global delta.side-by-side true
 git config --global delta.line-numbers true
 
-# Diff: colorMoved for detecting renamed code
+# Diff
+git config --global diff.tool nvimdiff
 git config --global diff.colorMoved default
 git config --global diff.colorMovedWs ignore-all-space
-
-# Difftool: nvimdiff
-git config --global diff.tool nvimdiff
+git config --global diff.algorithm histogram
 git config --global difftool.prompt false
 git config --global difftool.nvimdiff.cmd 'nvim -d "$LOCAL" "$REMOTE"'
 
 # Editor
 git config --global core.editor nvim
-
-# Global gitignore
 git config --global core.excludesFile ~/.gitignore
 
-ok "Git configured (delta pager, nvimdiff, colorMoved)"
+# Rebase workflow
+git config --global rerere.enabled true
+git config --global rebase.autosquash true
+git config --global rebase.autostash true
+
+# Merge
+git config --global merge.conflictstyle zdiff3
+
+# Push/pull/fetch
+git config --global pull.rebase true
+git config --global push.autoSetupRemote true
+git config --global fetch.prune true
+
+# Misc
+git config --global commit.verbose true
+git config --global branch.sort -committerdate
+git config --global init.defaultBranch main
+
+# Aliases
+git config --global alias.fixup "commit --fixup"
+git config --global alias.amend "commit --amend --no-edit"
+git config --global alias.uncommit "reset --soft HEAD~1"
+git config --global alias.dw "diff --word-diff"
+git config --global alias.recent "branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)'"
+
+ok "Git configured"
 
 # Prompt for user identity if not set
 if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
@@ -239,13 +339,14 @@ if [ -z "$(git config --global user.email 2>/dev/null)" ]; then
 fi
 
 # =============================================================================
-# 9. Deploy dotfiles
+# 12. Deploy dotfiles
 # =============================================================================
 info "Deploying dotfiles..."
 
 deploy_file "$SCRIPT_DIR/tmux.conf"          "$HOME/.tmux.conf"
 deploy_file "$SCRIPT_DIR/nvim/init.lua"      "$HOME/.config/nvim/init.lua"
 deploy_file "$SCRIPT_DIR/lazygit/config.yml" "$HOME/.config/lazygit/config.yml"
+deploy_file "$SCRIPT_DIR/starship.toml"      "$HOME/.config/starship.toml"
 
 # Claude Code settings
 if [ -f "$SCRIPT_DIR/claude-settings.json" ]; then
@@ -253,12 +354,9 @@ if [ -f "$SCRIPT_DIR/claude-settings.json" ]; then
 fi
 
 # =============================================================================
-# 10. Inject shell aliases into .zshrc
+# 13. Configure .zshrc
 # =============================================================================
-MARKER_START="# >>> terminal-dev-setup >>>"
-MARKER_END="# <<< terminal-dev-setup <<<"
-
-inject_aliases() {
+configure_zshrc() {
     local zshrc="$HOME/.zshrc"
 
     if [ ! -f "$zshrc" ]; then
@@ -266,36 +364,51 @@ inject_aliases() {
         touch "$zshrc"
     fi
 
-    # Remove existing block if present
-    if grep -qF "$MARKER_START" "$zshrc"; then
-        info "Updating existing terminal-dev-setup block in .zshrc..."
-        # Create temp file without the old block
+    backup_if_exists "$zshrc"
+
+    # Remove old marker-based block if present (migration from previous version)
+    if grep -qF "# >>> terminal-dev-setup >>>" "$zshrc"; then
+        info "Removing old marker-based alias block from .zshrc..."
         local tmpfile
         tmpfile=$(mktemp)
-        awk "
-            /$MARKER_START/ { skip=1; next }
-            /$MARKER_END/   { skip=0; next }
+        awk '
+            /# >>> terminal-dev-setup >>>/ { skip=1; next }
+            /# <<< terminal-dev-setup <<</ { skip=0; next }
             !skip { print }
-        " "$zshrc" > "$tmpfile"
+        ' "$zshrc" > "$tmpfile"
         mv "$tmpfile" "$zshrc"
     fi
 
-    # Append new block
-    {
-        echo ""
-        echo "$MARKER_START"
-        cat "$SCRIPT_DIR/zsh-aliases.zsh"
-        echo "$MARKER_END"
-    } >> "$zshrc"
+    # Set ZSH_THEME="" (starship replaces the prompt)
+    if grep -q '^ZSH_THEME=' "$zshrc"; then
+        sed -i 's/^ZSH_THEME=.*/ZSH_THEME=""/' "$zshrc"
+        ok "Set ZSH_THEME=\"\" in .zshrc (starship handles the prompt)"
+    fi
 
-    ok "Shell aliases injected into .zshrc"
+    # Update plugins line to include autosuggestions and syntax-highlighting
+    if grep -q '^plugins=' "$zshrc"; then
+        sed -i 's/^plugins=.*/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' "$zshrc"
+        ok "Updated plugins in .zshrc"
+    fi
+
+    # Deploy aliases file
+    deploy_file "$SCRIPT_DIR/zsh-aliases.zsh" "$HOME/.config/terminal-dev-setup/aliases.zsh"
+
+    # Add source line (idempotent)
+    local source_line='[ -r "$HOME/.config/terminal-dev-setup/aliases.zsh" ] && source "$HOME/.config/terminal-dev-setup/aliases.zsh"'
+    if ! grep -qF "terminal-dev-setup/aliases.zsh" "$zshrc"; then
+        echo "" >> "$zshrc"
+        echo "$source_line" >> "$zshrc"
+        ok "Added source line to .zshrc"
+    else
+        ok "Source line already in .zshrc"
+    fi
 }
 
-backup_if_exists "$HOME/.zshrc"
-inject_aliases
+configure_zshrc
 
 # =============================================================================
-# 11. Set zsh as default shell (if not already)
+# 14. Set zsh as default shell (if not already)
 # =============================================================================
 if [ "$SHELL" != "$(command -v zsh)" ]; then
     info "Setting zsh as default shell..."
@@ -312,15 +425,15 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Start a new shell or run: exec zsh"
-echo "  2. Open tmux and press prefix + I to install tmux plugins"
-echo "  3. Open nvim — lazy.nvim will auto-install plugins on first launch"
-echo "  4. Set git identity if not already configured:"
-echo "       git config --global user.name \"Your Name\""
-echo "       git config --global user.email \"your@email.com\""
+echo "  2. Set your terminal font to 'JetBrainsMono Nerd Font'"
+echo "  3. Open tmux and press prefix + I to install tmux plugins"
+echo "  4. Open nvim — lazy.nvim will auto-install plugins on first launch"
+echo "  5. Set git identity if not already configured:"
+echo "       git config --global user.name \"Aman Agrawal\""
+echo "       git config --global user.email \"amanagr@zulip.com\""
+echo "  6. Add machine-specific config to ~/.zshrc.local (optional)"
 echo ""
 if [ -d "$BACKUP_DIR" ]; then
     echo -e "  ${YELLOW}Backups saved to: $BACKUP_DIR${NC}"
     echo ""
 fi
-echo "Terminal gotchas:"
-echo "  - Terminal type should be xterm-256color for proper color support"

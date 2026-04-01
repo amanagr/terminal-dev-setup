@@ -7,7 +7,7 @@ TypeScript + Handlebars).
 ## Install
 
 ```bash
-git clone <this-repo> ~/terminal-dev-setup
+git clone git@github.com:amanagr/terminal-dev-setup.git ~/terminal-dev-setup
 cd ~/terminal-dev-setup
 ./install.sh
 ```
@@ -15,273 +15,382 @@ cd ~/terminal-dev-setup
 Re-running is safe — existing files are backed up to
 `~/.dotfiles-backup/<timestamp>/`.
 
-After install: open tmux and press `prefix + I` to install tmux
-plugins, then open nvim and let lazy.nvim auto-install on first launch.
+After install:
+
+1. Set your terminal font to **JetBrains Mono Nerd Font**
+2. Open tmux and press `prefix + I` to install tmux plugins
+3. Open nvim — lazy.nvim auto-installs plugins on first launch
 
 ## Zulip repository setup
 
-After running `install.sh`, set up the Zulip repo:
-
 ```bash
-# Set your git identity
 git config --global user.name "Aman Agrawal"
 git config --global user.email "amanagr@zulip.com"
 
-# Clone the repo
 git clone git@github.com:amanagr/zulip.git ~/zulip
 cd ~/zulip
-
-# Add the upstream remote with full branch names
 git remote add upstream https://github.com/zulip/zulip.git
-git remote set-url --push upstream nobody  # prevent accidental pushes to upstream
+git remote set-url --push upstream nobody
 git fetch upstream
 
-# Provision the dev environment (installs dependencies, sets up database, etc.)
 ./tools/provision
 ```
 
-### Git config notes
+Machine-specific environment variables (like `EXTERNAL_HOST`) go in
+`~/.zshrc.local` — this file is sourced automatically if it exists.
 
-`install.sh` configures these globally:
+## How the pieces fit together
 
-- **`core.editor`** = `nvim`
-- **`core.pager`** = `delta` (side-by-side diffs with line numbers)
-- **`diff.tool`** = `nvimdiff` (open diffs in nvim split view)
-- **`diff.colorMoved`** = `default` (highlights moved code blocks in diffs)
-- **`core.excludesFile`** = `~/.gitignore` (global gitignore)
+```
+Terminal (Kitty/Ghostty)
+  └── tmux (session persistence, pane management)
+        ├── Pane 1: nvim (editing)
+        ├── Pane 2: ./tools/run-dev (dev server)
+        └── Pane 3: shell (tests, git, lazygit)
+```
 
-### Typical Zulip workflow
+- **Ctrl-h/j/k/l** moves between tmux panes AND nvim splits seamlessly
+  (vim-tmux-navigator handles the handoff).
+- **Starship** provides the prompt (git branch, python/node versions,
+  command duration).
+- **delta** renders all git diffs with side-by-side, line numbers, and
+  syntax highlighting.
+- **.hbs files** use vim-mustache-handlebars (not treesitter glimmer —
+  it doesn't handle Zulip's Handlebars syntax).
+- **LSP** uses Neovim 0.12 native `vim.lsp.config`/`vim.lsp.enable`.
+  Mason handles installation only.
+- **blink.cmp** provides completion with LSP, path, snippet, and buffer
+  sources.
+
+Leader key is **Space**. Press it and wait to see all available
+keybindings via which-key.
+
+---
+
+## Workflows
+
+### Starting your day
 
 ```bash
-# Start your dev session
 dev                          # attach/create tmux 'dev' session
 zcd                          # cd ~/zulip
-run                          # start the dev server
+run                          # start dev server (in a dedicated pane)
+```
 
-# In another tmux pane: work on a feature
+Split tmux panes with `prefix |` (horizontal) or `prefix -` (vertical).
+`prefix c` opens a new window.
+
+### Finding code
+
+| What you want | How |
+|---------------|-----|
+| Open a file by name | `Ctrl-p` or `Space ff` in nvim |
+| Grep across the project | `Space fg` (Telescope live grep) |
+| Grep word under cursor | `Space fs` |
+| Find and open from shell | `fe` (fzf + bat preview, opens in nvim) |
+| Ripgrep from shell, jump to line | `frg pattern` |
+| cd into a directory via fuzzy find | `fcd` |
+| Browse files in current directory | `-` (oil.nvim, navigate like a buffer) |
+| Resume last Telescope search | `Space fr` |
+
+### Reading and navigating code
+
+| What you want | How |
+|---------------|-----|
+| Go to definition | `gd` |
+| Find all references | `gr` |
+| Go to implementation | `gI` |
+| Hover docs | `K` |
+| Type definition | `Space D` |
+| Next/prev diagnostic | `]d` / `[d` |
+| Next/prev LSP reference under cursor | `]]` / `[[` |
+| Jump between quickfix results | `]q` / `[q` |
+| See all diagnostics | `Space xx` |
+| See diagnostics for current file | `Space xd` |
+
+The top of the buffer shows sticky context (function/class name) via
+treesitter-context.
+
+### Editing
+
+| What you want | How |
+|---------------|-----|
+| Toggle comment | `gcc` (line) or `gc` (selection) |
+| Surround with quotes | `ysiw"` (surround word), `yss"` (surround line) |
+| Change surrounding | `cs"'` (change `"` to `'`) |
+| Delete surrounding | `ds"` |
+| Move lines up/down | `J` / `K` in visual mode |
+| Rename symbol (LSP) | `Space rn` |
+| Code action | `Space ca` |
+| Save | `Space w` |
+
+### Completion (blink.cmp)
+
+Completion appears automatically as you type. Sources: LSP, file
+paths, snippets, buffer words.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl-n` / `Ctrl-p` | Navigate completion items |
+| `Ctrl-y` | Accept |
+| `Ctrl-e` | Dismiss |
+| `Ctrl-Space` | Toggle completion + docs |
+| `Tab` / `Shift-Tab` | Jump forward/back in snippet placeholders |
+| `Ctrl-k` | Signature help |
+
+### Git — daily workflow
+
+```bash
+# Start a feature branch from latest upstream
 git fetch upstream
-gcb my-feature upstream/main # create branch from latest upstream
+gcb my-feature upstream/main
 
-# ... edit code in nvim ...
+# ... make changes ...
+
+# Check status, stage, diff
+gs                           # git status -sb
+gd                           # git diff
+gds                          # git diff --staged
+
+# Lint and test before committing
 zlint                        # lint modified files
 ./tools/test-backend zerver.tests.test_relevant_module
 
-# Review and commit
-lg                           # open lazygit to stage/commit/rebase
+# Commit
+lg                           # open lazygit — stage hunks, write commit
 ```
 
-## Architecture notes
+### Git — shell aliases quick reference
 
-- **Leader key** is `Space` in Neovim.
-- **tmux prefix** is `Ctrl-b` (default).
-- Pane navigation (`Ctrl-h/j/k/l`) is shared seamlessly between tmux
-  and Neovim via vim-tmux-navigator.
-- `.hbs` files are mapped to `handlebars` filetype and use
-  vim-mustache-handlebars (not treesitter glimmer — it doesn't work
-  for Zulip's Handlebars syntax).
-- LSP uses Neovim 0.12 native `vim.lsp.config`/`vim.lsp.enable`, not
-  nvim-lspconfig. Mason handles installation only.
-- Treesitter uses the 0.12 API: `require("nvim-treesitter").install()`
-  for parsers, `vim.treesitter.start()` via FileType autocmd for
-  highlighting.
-- Completion is blink.cmp (Rust fuzzy matching, built-in LSP/path/
-  snippet/buffer sources).
+| Alias | Expands to |
+|-------|-----------|
+| `gs` | `git status -sb` |
+| `gd` / `gds` | `git diff` / `git diff --staged` |
+| `gl` / `gla` | `git log --oneline` / with `--all --graph` |
+| `gco` / `gcb` | `git checkout` / `git checkout -b` |
+| `gcp` | `git cherry-pick` |
+| `grb` / `grbi` | `git rebase` / `git rebase -i` |
+| `gst` / `gstp` | `git stash` / `git stash pop` |
+| `gshow [ref]` | Show commit with delta |
+| `glf [n]` | Log with file stats (default 10) |
+| `gls pattern` | Search commit messages |
+| `ggrep string [path]` | Search code across git history (`-S`) |
 
-## Keyboard shortcuts
+### Git — fixup workflow (Zulip commit discipline)
 
-### Neovim — Navigation
+When you need to fix an earlier commit without creating a new one:
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `Ctrl-p` | normal | Find files (Telescope) |
-| `Space ff` | normal | Find files |
-| `Space fg` | normal | Live grep across project |
-| `Space fb` | normal | Switch buffer |
-| `Space fo` | normal | Recent files |
-| `Space fr` | normal | Resume last Telescope search |
-| `Space fs` | normal | Grep word under cursor |
-| `Space fh` | normal | Search help tags |
-| `Space e` | normal | Open file explorer (oil.nvim) |
-| `-` | normal | Open parent directory (oil.nvim) |
-| `Ctrl-h/j/k/l` | normal | Move between splits (also works across tmux panes) |
-| `Ctrl-d` / `Ctrl-u` | normal | Half-page down/up (cursor stays centered) |
+```bash
+# Make your fix, then:
+gfix <commit-hash>           # creates --fixup commit and auto-squashes
 
-### Neovim — LSP
+# Or step by step:
+git add -p                   # stage the fix
+git fixup <commit-hash>      # create fixup commit (git alias)
+grbi upstream/main           # autosquash is on by default
+```
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `gd` | normal | Go to definition |
-| `gr` | normal | Find references |
-| `gI` | normal | Go to implementation |
-| `gD` | normal | Go to declaration |
-| `K` | normal | Hover documentation |
-| `Space rn` | normal | Rename symbol |
-| `Space ca` | normal | Code action |
-| `Space D` | normal | Type definition |
-| `]d` / `[d` | normal | Next/prev diagnostic |
-| `]]` / `[[` | normal | Next/prev LSP reference (snacks.words) |
+`rerere` is enabled — git remembers how you resolved conflicts and
+replays the resolution automatically on future rebases.
 
-### Neovim — Completion (blink.cmp)
+### Git — other useful commands
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `Ctrl-Space` | insert | Show/toggle completion + docs |
-| `Ctrl-n` / `Ctrl-p` | insert | Next/prev completion item |
-| `Ctrl-y` | insert | Accept completion |
-| `Ctrl-e` | insert | Dismiss completion |
-| `Tab` / `Shift-Tab` | insert | Jump forward/back in snippet |
-| `Ctrl-b` / `Ctrl-f` | insert | Scroll documentation |
-| `Ctrl-k` | insert | Signature help |
+| Command | What it does |
+|---------|-------------|
+| `git amend` | Amend last commit without editing message |
+| `git uncommit` | Undo last commit, keep changes staged |
+| `git dw` | Word-level diff (see exactly which words changed) |
+| `git recent` | List branches sorted by last commit date |
+| `gdiverg [base]` | Show commits ahead/behind a base branch (default: upstream/main) |
 
-### Neovim — Git
+### Git — in Neovim
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `Space gg` | normal | Git status (fugitive) |
-| `Space gd` | normal | Vertical diff split |
-| `Space gl` | normal | Git log (last 30 commits) |
-| `Space gL` | normal | Git log graph (all branches) |
-| `Space gc` | normal | Browse commits (Telescope) |
-| `Space gb` | normal | Browse branches (Telescope) |
-| `Space gs` | normal | Git status (Telescope) |
-| `]h` / `[h` | normal | Next/prev git hunk |
-| `Space hs` | normal | Stage hunk |
-| `Space hr` | normal | Reset hunk |
-| `Space hp` | normal | Preview hunk inline |
-| `Space hb` | normal | Blame line (full commit) |
-| `Space hd` | normal | Diff against index |
-| `Space hD` | normal | Diff against last commit |
-| `Enter` | normal (git log buffer) | Open commit under cursor in difftool |
+| Key | Action |
+|-----|--------|
+| `Space gg` | Open fugitive git status |
+| `Space gd` | Vertical diff split of current file |
+| `Space gl` | Git log (last 30 commits) |
+| `Space gL` | Git log graph (all branches) |
+| `Space gc` | Browse commits (Telescope) |
+| `Space gb` | Browse/switch branches (Telescope) |
+| `Space gs` | Changed files (Telescope) |
+| `]h` / `[h` | Jump to next/prev git hunk |
+| `Space hs` | Stage hunk under cursor |
+| `Space hr` | Reset hunk |
+| `Space hp` | Preview hunk inline |
+| `Space hb` | Full blame for current line |
+| `Space hd` | Diff file against index |
+| `Space hD` | Diff file against last commit |
+| `Enter` (in git log) | Open commit under cursor in difftool |
 
-### Neovim — Diagnostics (trouble.nvim)
+Inline git blame is always visible (gitsigns, 500ms delay).
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `Space xx` | normal | Toggle diagnostics panel (all files) |
-| `Space xd` | normal | Toggle diagnostics panel (current buffer) |
-| `Space xq` | normal | Toggle quickfix list |
-| `Space xl` | normal | Toggle location list |
+### Lazygit
 
-### Neovim — Editing
+Open with `lg` from the shell.
 
-| Key | Mode | Action |
-|-----|------|--------|
-| `gcc` | normal | Toggle comment (built-in, ts-comments aware) |
-| `gc` | visual | Toggle comment on selection |
-| `ys{motion}{char}` | normal | Add surround (e.g., `ysiw"` to surround word with quotes) |
-| `cs{old}{new}` | normal | Change surround (e.g., `cs"'` to change `"` to `'`) |
-| `ds{char}` | normal | Delete surround |
-| `J` / `K` | visual | Move selected lines down/up |
-| `Space w` | normal | Save file |
-| `]b` / `[b` | normal | Next/prev buffer |
-| `Space bd` | normal | Delete buffer |
-| `]q` / `[q` | normal | Next/prev quickfix item |
+| Key | Action |
+|-----|--------|
+| `Space` | Stage/unstage file |
+| `a` | Stage all |
+| `c` | Commit |
+| `A` | Amend last commit |
+| `S` | Squash (in rebase) |
+| `e` | Edit commit (in rebase) |
+| `d` | Drop commit (in rebase) |
+| `Ctrl-t` | Open file in nvim (from diff view) |
+| `\|` | Cycle between delta and difftastic pagers |
+| `G` | Open GitHub PR for branch (custom command) |
+| `P` | Prune branches with deleted remotes (custom command) |
+| `/` | Filter (fuzzy mode) |
 
-### Neovim — Discovery
+Lazygit auto-fetches in the background and shows divergence from
+main/master in the branch list.
 
-Press `Space` and wait 500ms to see all available leader keybindings
-via which-key. Groups: `f` (Find), `g` (Git), `h` (Hunks),
-`b` (Buffer), `x` (Diagnostics).
+When launched from a Neovim terminal (`:terminal lazygit`), editing a
+file opens it in the parent Neovim instance (`nvim-remote` preset).
 
 ### tmux
 
 | Key | Action |
 |-----|--------|
-| `prefix \|` | Split pane horizontally |
-| `prefix -` | Split pane vertically |
-| `prefix h/j/k/l` | Select pane (vim-style) |
+| `prefix \|` | Split horizontally |
+| `prefix -` | Split vertically |
 | `Ctrl-h/j/k/l` | Smart pane switch (works in both tmux and nvim) |
+| `prefix h/j/k/l` | Select pane (vim-style, prefix required) |
 | `prefix H/J/K/L` | Resize pane (repeatable) |
-| `prefix Enter` | Enter copy mode (vi keys, `v` to select, `y` to copy) |
-| `prefix r` | Reload tmux config |
+| `prefix c` | New window (inherits current path) |
+| `prefix Enter` | Copy mode (vi keys: `v` select, `y` copy) |
+| `prefix r` | Reload config |
 | `prefix s` | Session picker |
 | `prefix S` | Create new named session |
-| `prefix c` | New window (inherits current path) |
-| `prefix I` | Install TPM plugins (first run) |
+| `prefix I` | Install TPM plugins |
 
-### Shell aliases
+Sessions auto-save every 15 minutes (tmux-continuum) and auto-restore
+on tmux start (tmux-resurrect).
 
-| Alias | Command |
-|-------|---------|
-| `dev` | Attach to tmux `dev` session or create it |
-| `v` / `vi` / `vim` | nvim |
-| `lg` | lazygit |
-| `gs` | `git status -sb` |
-| `gd` / `gds` | `git diff` / `git diff --staged` |
-| `gl` / `gla` | `git log --oneline` / with graph |
-| `gco` / `gcb` | `git checkout` / `git checkout -b` |
-| `gcp` | `git cherry-pick` |
-| `grb` / `grbi` | `git rebase` / `git rebase -i` |
-| `gst` / `gstp` | `git stash` / `git stash pop` |
-| `gshow [ref]` | Show commit diff with delta |
-| `glf [n]` | Git log with file stats (last n, default 10) |
-| `gls <pattern>` | Search git log messages |
-| `ggrep <string> [path]` | Search code across git history (`-S`) |
-| `zcd` | `cd ~/zulip` |
-| `zlint` | Run Zulip linters on modified files |
-| `run` | `./tools/run-dev interface=""` |
+### Reviewing a PR
 
-### Shell — fzf functions
+```bash
+# Fetch and check out the PR
+gh pr checkout 12345
 
-| Command | Action |
-|---------|--------|
-| `Ctrl-T` | Fuzzy find files (insert path) |
-| `Ctrl-R` | Fuzzy search shell history |
-| `fe` | Fuzzy find file and open in nvim (with bat preview) |
-| `fcd` | Fuzzy find directory and cd into it |
-| `frg [pattern]` | Ripgrep + fzf, open result in nvim at the matching line |
+# Browse the diff in lazygit
+lg
 
-## Installed tools
+# Or in the shell
+gd upstream/main             # full diff against main
+glf                          # see which files changed
+gshow <hash>                 # inspect a specific commit with delta
 
-Installed via `install.sh`:
+# Open specific files in nvim
+fe                           # fuzzy find and open
+frg "function_name"          # grep and jump to line
+```
 
-| Tool | Purpose |
-|------|---------|
-| neovim 0.12+ | Editor (appimage) |
-| tmux | Terminal multiplexer |
-| lazygit | TUI git client |
-| ripgrep (rg) | Fast code search |
-| fzf | Fuzzy finder |
-| fd-find (fd) | Fast file finder |
-| bat | Cat with syntax highlighting |
-| git-delta | Git diff viewer (side-by-side, line numbers) |
-| tig | TUI git log browser |
-| tree-sitter-cli | Parser compiler (required by nvim-treesitter) |
-| jq | JSON processor |
+---
 
-## Neovim plugins
+## What's installed
+
+### CLI tools
+
+| Tool | Purpose | Installed via |
+|------|---------|---------------|
+| neovim 0.12+ | Editor | appimage |
+| tmux | Terminal multiplexer | apt |
+| lazygit | TUI git client | GitHub releases |
+| ripgrep (rg) | Fast code search | apt |
+| fzf | Fuzzy finder | apt |
+| fd-find (fd) | Fast file finder | apt |
+| bat | Cat with syntax highlighting | apt |
+| git-delta | Side-by-side diffs with line numbers | apt |
+| difftastic (difft) | Structural/AST-aware diffs | GitHub releases |
+| tig | TUI git log browser | apt |
+| tree-sitter-cli | Parser compiler for nvim-treesitter | GitHub releases |
+| starship | Cross-shell prompt | install script |
+| jq | JSON processor | apt |
+
+### Neovim plugins
 
 | Plugin | Purpose |
 |--------|---------|
 | lazy.nvim | Plugin manager |
-| catppuccin | Color theme (mocha, transparent bg) |
-| telescope.nvim | Fuzzy finder UI |
+| catppuccin | Theme (mocha, transparent background) |
+| telescope.nvim + fzf-native | Fuzzy finder for files, grep, git |
 | oil.nvim | File explorer (edit filesystem like a buffer) |
-| gitsigns.nvim | Inline git blame, hunk staging |
-| vim-fugitive | Git commands inside nvim |
+| gitsigns.nvim | Inline git blame, hunk staging/navigation |
+| vim-fugitive | Git commands (`:Git`, diff splits, log) |
 | nvim-treesitter | Syntax highlighting (0.12 API) |
-| nvim-treesitter-context | Sticky function/class context at top of buffer |
-| mason.nvim | LSP server installer |
-| blink.cmp | Completion engine (LSP, path, snippets, buffer) |
+| nvim-treesitter-context | Sticky function/class context at top |
+| mason.nvim + mason-lspconfig | LSP server installer (pyright, ts_ls) |
+| blink.cmp | Completion (LSP, path, snippets, buffer) |
 | trouble.nvim | Diagnostics panel |
-| snacks.nvim | Bigfile handling + LSP word highlighting |
+| snacks.nvim | Bigfile protection + LSP word highlighting |
 | vim-tmux-navigator | Seamless tmux/nvim pane switching |
-| lualine.nvim | Statusline |
+| lualine.nvim | Statusline (branch, diff, diagnostics) |
 | nvim-surround | Surround motions (ys, cs, ds) |
 | nvim-autopairs | Auto-close brackets/quotes |
 | ts-comments.nvim | Treesitter-aware comment strings |
-| which-key.nvim | Keybinding discovery popup |
-| indent-blankline.nvim | Indent guides |
+| which-key.nvim | Keybinding discovery (press Space and wait) |
+| indent-blankline.nvim | Indent guides with scope highlighting |
 | vim-mustache-handlebars | Handlebars syntax for .hbs files |
 | friendly-snippets | Snippet collection for blink.cmp |
+
+### Git config
+
+Set globally by `install.sh`:
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `core.pager` | delta | Side-by-side diffs everywhere |
+| `core.editor` | nvim | |
+| `diff.algorithm` | histogram | Cleaner diffs for refactored code |
+| `diff.colorMoved` | default | Highlights moved code blocks |
+| `merge.conflictstyle` | zdiff3 | Shows original text in conflicts |
+| `rerere.enabled` | true | Remembers conflict resolutions |
+| `rebase.autosquash` | true | `--fixup` commits auto-reorder |
+| `rebase.autostash` | true | Auto-stash before rebase |
+| `pull.rebase` | true | Avoids accidental merge commits |
+| `push.autoSetupRemote` | true | No more `--set-upstream` on first push |
+| `fetch.prune` | true | Removes stale remote tracking refs |
+| `commit.verbose` | true | Shows diff in commit editor |
+| `branch.sort` | -committerdate | Most recent branches first |
+
+Git aliases: `fixup`, `amend`, `uncommit`, `dw` (word diff), `recent`.
+
+---
+
+## File layout
+
+```
+~/
+├── .tmux.conf                              -> tmux config
+├── .config/
+│   ├── nvim/init.lua                       -> neovim config (single file)
+│   ├── lazygit/config.yml                  -> lazygit config
+│   ├── starship.toml                       -> prompt config
+│   ├── terminal-dev-setup/aliases.zsh      -> shell aliases (sourced by .zshrc)
+│   └── tmux/plugins/catppuccin/tmux/       -> catppuccin tmux theme
+├── .zshrc                                  -> Oh My Zsh + plugins + source line
+├── .zshrc.local                            -> machine-specific overrides (create manually)
+├── .claude/settings.json                   -> Claude Code settings
+├── .tmux/plugins/tpm/                      -> tmux plugin manager
+└── .oh-my-zsh/custom/plugins/
+    ├── zsh-autosuggestions/                 -> fish-like suggestions as you type
+    └── zsh-syntax-highlighting/            -> colors commands green/red as you type
+```
 
 ## Gotchas
 
 - **fzf in zsh**: Uses `fzf --zsh`, not `--bash`. The `frg` function is
-  named to avoid collision with zsh's `grep` alias expansion.
+  named to avoid collision with zsh's built-in alias expansion.
 - **Telescope treesitter preview**: Disabled (`treesitter = false`) to
-  avoid compatibility issues with the ft_to_lang shim.
+  avoid a compatibility issue with the ft_to_lang shim.
 - **Lualine theme**: Set to `"auto"`, not `"catppuccin"`, to avoid
   load-order issues.
-- **TPM plugins**: Must press `prefix + I` inside tmux on first run to
-  install tmux-resurrect and tmux-continuum.
+- **Catppuccin tmux**: Installed manually (not via TPM) to avoid
+  documented name conflicts. Update with `git -C ~/.config/tmux/plugins/catppuccin/tmux pull`.
+- **TPM plugins**: Press `prefix + I` inside tmux on first run to
+  install resurrect, continuum, and yank.
+- **Nerd Font required**: Set your terminal font to "JetBrainsMono Nerd
+  Font" for icons in Starship prompt, lazygit, and lualine.
