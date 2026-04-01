@@ -63,7 +63,6 @@ APT_PACKAGES=(
     build-essential
     zsh
     fontconfig
-    guake
 )
 
 sudo apt-get install -y "${APT_PACKAGES[@]}"
@@ -217,28 +216,6 @@ else
     ok "JetBrains Mono Nerd Font already installed"
 fi
 
-# =============================================================================
-# 8. Guake (dropdown terminal — Ctrl+` to toggle)
-# =============================================================================
-info "Configuring Guake..."
-
-# Set Guake to use JetBrains Mono Nerd Font, mocha colors, and Ctrl+` toggle
-gsettings set guake.general window-height 100 2>/dev/null || true
-gsettings set guake.general start-at-login true 2>/dev/null || true
-gsettings set guake.general use-default-font false 2>/dev/null || true
-gsettings set guake.general use-popup-notifications false 2>/dev/null || true
-gsettings set guake.style.font palette-name "Custom" 2>/dev/null || true
-gsettings set guake.style.font style "JetBrainsMono Nerd Font Mono 12" 2>/dev/null || true
-gsettings set guake.keybindings.global show-hide "<Control>grave" 2>/dev/null || true
-gsettings set guake.style.background transparency 100 2>/dev/null || true
-
-ok "Guake configured (Ctrl+\` to toggle, fullscreen, JetBrains Mono Nerd Font)"
-
-# Start Guake if running a desktop session and it's not already running
-if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && ! pgrep -x guake &>/dev/null; then
-    nohup guake &>/dev/null &
-    ok "Guake started"
-fi
 
 # =============================================================================
 # 9. npm packages (claude-remote-approver)
@@ -448,15 +425,13 @@ echo -e "${GREEN} Setup complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Log out and back in, or run: guake &"
-echo "  2. Press Ctrl+\` to open the dropdown terminal"
-echo "  3. Start a new shell or run: exec zsh"
-echo "  4. Open tmux and press prefix + I to install tmux plugins"
-echo "  5. Open nvim — lazy.nvim will auto-install plugins on first launch"
-echo "  6. Set git identity if not already configured:"
+echo "  1. Start a new shell or run: exec zsh"
+echo "  2. Open tmux and press prefix + I to install tmux plugins"
+echo "  3. Open nvim — lazy.nvim will auto-install plugins on first launch"
+echo "  4. Set git identity if not already configured:"
 echo "       git config --global user.name \"Aman Agrawal\""
 echo "       git config --global user.email \"amanagr@zulip.com\""
-echo "  7. Add machine-specific config to ~/.zshrc.local (optional)"
+echo "  5. Add machine-specific config to ~/.zshrc.local (optional)"
 echo ""
 if [ -d "$BACKUP_DIR" ]; then
     echo -e "  ${YELLOW}Backups saved to: $BACKUP_DIR${NC}"
