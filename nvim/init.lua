@@ -1,5 +1,5 @@
 -- =============================================================================
--- init.lua — Neovim config for terminal-first dev workflow
+-- init.lua — Neovim 0.12+ config for terminal-first dev workflow
 -- Focused on: code navigation, git, and Python/JS (Zulip stack)
 -- =============================================================================
 
@@ -81,17 +81,18 @@ map("n", "<leader>bd", "<cmd>bdelete<CR>", { desc = "Delete buffer" })
 map("n", "]d", vim.diagnostic.goto_next, { desc = "Next diagnostic" })
 map("n", "[d", vim.diagnostic.goto_prev, { desc = "Prev diagnostic" })
 
--- Handlerbars syntax highlight support
+-- Handlebars syntax highlight support
 vim.filetype.add({
     extension = {
         hbs = "handlebars",
     },
 })
+
 -- =============================================================================
 -- Plugin manager: lazy.nvim (auto-installs)
 -- =============================================================================
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
     vim.fn.system({
         "git", "clone", "--filter=blob:none",
         "https://github.com/folke/lazy.nvim.git",
@@ -108,13 +109,11 @@ require("lazy").setup({
     -- =========================================================================
     -- Theme
     -- =========================================================================
-   { "catppuccin/nvim", name = "catppuccin", priority = 1000 },
-
+    { "catppuccin/nvim", name = "catppuccin", priority = 1000 },
 
     -- =========================================================================
     -- Handlebars
     -- =========================================================================
-
     {
         "mustache/vim-mustache-handlebars",
         ft = "handlebars",
@@ -239,24 +238,29 @@ require("lazy").setup({
     },
 
     -- =========================================================================
-    -- Treesitter: syntax highlighting + text objects
+    -- Treesitter (Neovim 0.12+ API)
     -- =========================================================================
     {
         "nvim-treesitter/nvim-treesitter",
+        lazy = false,
         build = ":TSUpdate",
         config = function()
-            require("nvim-treesitter").setup({
-                ensure_installed = {
-                    "python", "javascript", "typescript", "html", "css",
-                    "json", "yaml", "toml", "bash", "lua", "markdown",
-                    "git_rebase", "gitcommit", "diff",
-                },
+            require("nvim-treesitter").install({
+                "python", "javascript", "typescript", "html", "css",
+                "json", "yaml", "toml", "bash", "lua", "markdown",
+                "markdown_inline", "git_rebase", "gitcommit", "diff",
+            })
+
+            -- Enable treesitter highlighting for all filetypes with a parser
+            vim.api.nvim_create_autocmd("FileType", {
+                callback = function()
+                    pcall(vim.treesitter.start)
+                end,
             })
         end,
     },
-    -- =========================================================================
-    -- Treesitter: sticky context at top.
-    -- =========================================================================
+
+    -- Treesitter: sticky context at top
     {
         "nvim-treesitter/nvim-treesitter-context",
         config = function()
@@ -265,6 +269,7 @@ require("lazy").setup({
             })
         end,
     },
+
     -- =========================================================================
     -- LSP (native vim.lsp.config — Neovim 0.11+)
     -- =========================================================================
@@ -277,6 +282,69 @@ require("lazy").setup({
                 ensure_installed = { "pyright", "ts_ls" },
             })
         end,
+    },
+
+    -- =========================================================================
+    -- Completion (blink.cmp)
+    -- =========================================================================
+    {
+        "saghen/blink.cmp",
+        version = "1.*",
+        dependencies = { "rafamadriz/friendly-snippets" },
+        opts = {
+            keymap = { preset = "default" },
+            appearance = { nerd_font_variant = "mono" },
+            completion = {
+                documentation = {
+                    auto_show = true,
+                    auto_show_delay_ms = 500,
+                },
+                list = {
+                    selection = {
+                        preselect = true,
+                        auto_insert = true,
+                    },
+                },
+            },
+            signature = { enabled = true },
+            sources = {
+                default = { "lsp", "path", "snippets", "buffer" },
+            },
+            fuzzy = { implementation = "prefer_rust_with_warning" },
+        },
+        opts_extend = { "sources.default" },
+    },
+
+    -- =========================================================================
+    -- Diagnostics panel
+    -- =========================================================================
+    {
+        "folke/trouble.nvim",
+        cmd = "Trouble",
+        keys = {
+            { "<leader>xx", "<cmd>Trouble diagnostics toggle<CR>", desc = "Diagnostics" },
+            { "<leader>xd", "<cmd>Trouble diagnostics toggle filter.buf=0<CR>", desc = "Buffer diagnostics" },
+            { "<leader>xl", "<cmd>Trouble loclist toggle<CR>", desc = "Location list" },
+            { "<leader>xq", "<cmd>Trouble qflist toggle<CR>", desc = "Quickfix list" },
+        },
+        opts = {},
+    },
+
+    -- =========================================================================
+    -- Snacks: bigfile + word highlighting
+    -- =========================================================================
+    {
+        "folke/snacks.nvim",
+        priority = 1000,
+        lazy = false,
+        opts = {
+            bigfile = { enabled = true },
+            words = { enabled = true },
+        },
+        keys = {
+            { "]]", function() Snacks.words.jump(1, true) end, desc = "Next LSP reference" },
+            { "[[", function() Snacks.words.jump(-1, true) end, desc = "Prev LSP reference" },
+        },
     },
 
     -- =========================================================================
@@ -313,8 +381,8 @@ require("lazy").setup({
     -- Autopairs
     { "windwp/nvim-autopairs", event = "InsertEnter", config = true },
 
-    -- Comment: gcc to toggle
-    { "numToStr/Comment.nvim", config = true },
+    -- Treesitter-aware comment strings (Handlebars, embedded languages)
+    { "folke/ts-comments.nvim", opts = {}, event = "VeryLazy" },
 
     -- Which-key: shows available keybindings
     {
@@ -328,6 +396,7 @@ require("lazy").setup({
                 { "<leader>g", group = "Git" },
                 { "<leader>h", group = "Hunks" },
                 { "<leader>b", group = "Buffer" },
+                { "<leader>x", group = "Diagnostics" },
             })
         end,
     },

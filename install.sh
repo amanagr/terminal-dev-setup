@@ -82,7 +82,7 @@ if command -v fdfind &>/dev/null && ! command -v fd &>/dev/null; then
 fi
 
 # =============================================================================
-# 2. Neovim (appimage — apt version is outdated, need 0.11+)
+# 2. Neovim (appimage — apt version is outdated, need 0.12+)
 # =============================================================================
 install_neovim() {
     local current_version=""
@@ -90,9 +90,9 @@ install_neovim() {
         current_version=$(nvim --version | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+')
     fi
 
-    # Only install if not present or version < 0.11
-    if [ -n "$current_version" ] && [ "$(echo -e "0.11\n$current_version" | sort -V | tail -1)" = "$current_version" ]; then
-        ok "Neovim $current_version already installed (>= 0.11)"
+    # Only install if not present or version < 0.12
+    if [ -n "$current_version" ] && [ "$(echo -e "0.12\n$current_version" | sort -V | tail -1)" = "$current_version" ]; then
+        ok "Neovim $current_version already installed (>= 0.12)"
         return
     fi
 
@@ -136,22 +136,51 @@ install_lazygit() {
 install_lazygit
 
 # =============================================================================
-# 4. npm packages (tree-sitter-cli, claude-remote-approver)
+# 4. tree-sitter-cli (required by nvim-treesitter for parser compilation)
+# =============================================================================
+install_tree_sitter_cli() {
+    if command -v tree-sitter &>/dev/null; then
+        ok "tree-sitter-cli already installed: $(tree-sitter --version 2>/dev/null || echo 'unknown')"
+        return
+    fi
+
+    info "Installing tree-sitter-cli..."
+    local version
+    version=$(curl -fsSL "https://api.github.com/repos/tree-sitter/tree-sitter/releases/latest" |
+              grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+
+    if [ -z "$version" ]; then
+        warn "Could not determine tree-sitter-cli version, trying npm fallback..."
+        if command -v npm &>/dev/null; then
+            sudo npm install -g tree-sitter-cli
+        fi
+        return
+    fi
+
+    local url="https://github.com/tree-sitter/tree-sitter/releases/download/v${version}/tree-sitter-linux-x64.gz"
+    curl -fsSL "$url" | gunzip > /tmp/tree-sitter
+    chmod +x /tmp/tree-sitter
+    sudo mv /tmp/tree-sitter /usr/local/bin/tree-sitter
+    ok "tree-sitter-cli $version installed"
+}
+install_tree_sitter_cli
+
+# =============================================================================
+# 5. npm packages (claude-remote-approver)
 # =============================================================================
 if command -v npm &>/dev/null; then
     info "Installing global npm packages..."
-    sudo npm install -g tree-sitter-cli claude-remote-approver 2>/dev/null || {
+    sudo npm install -g claude-remote-approver 2>/dev/null || {
         warn "npm global install failed — you may need to configure npm prefix"
     }
     ok "npm packages installed"
 else
-    warn "npm not found — skipping tree-sitter-cli and claude-remote-approver"
-    warn "Install Node.js first, then re-run this script or run:"
-    warn "  npm install -g tree-sitter-cli claude-remote-approver"
+    warn "npm not found — skipping claude-remote-approver"
+    warn "Install Node.js first, then run: npm install -g claude-remote-approver"
 fi
 
 # =============================================================================
-# 5. Oh My Zsh
+# 6. Oh My Zsh
 # =============================================================================
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
     info "Installing Oh My Zsh..."
@@ -162,7 +191,7 @@ else
 fi
 
 # =============================================================================
-# 6. TPM (tmux plugin manager)
+# 7. TPM (tmux plugin manager)
 # =============================================================================
 if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
     info "Installing TPM..."
@@ -173,7 +202,7 @@ else
 fi
 
 # =============================================================================
-# 7. Git config
+# 8. Git config
 # =============================================================================
 info "Configuring git..."
 
@@ -210,20 +239,21 @@ if [ -z "$(git config --global user.email 2>/dev/null)" ]; then
 fi
 
 # =============================================================================
-# 8. Deploy dotfiles
+# 9. Deploy dotfiles
 # =============================================================================
 info "Deploying dotfiles..."
 
 deploy_file "$SCRIPT_DIR/tmux.conf"          "$HOME/.tmux.conf"
 deploy_file "$SCRIPT_DIR/nvim/init.lua"      "$HOME/.config/nvim/init.lua"
-deploy_file "$SCRIPT_DIR/nvim/lazy-lock.json" "$HOME/.config/nvim/lazy-lock.json"
 deploy_file "$SCRIPT_DIR/lazygit/config.yml" "$HOME/.config/lazygit/config.yml"
 
-# Claude Code settings (deny git push, remote approver hook)
-deploy_file "$SCRIPT_DIR/claude-settings.json" "$HOME/.claude/settings.json"
+# Claude Code settings
+if [ -f "$SCRIPT_DIR/claude-settings.json" ]; then
+    deploy_file "$SCRIPT_DIR/claude-settings.json" "$HOME/.claude/settings.json"
+fi
 
 # =============================================================================
-# 9. Inject shell aliases into .zshrc
+# 10. Inject shell aliases into .zshrc
 # =============================================================================
 MARKER_START="# >>> terminal-dev-setup >>>"
 MARKER_END="# <<< terminal-dev-setup <<<"
@@ -265,7 +295,7 @@ backup_if_exists "$HOME/.zshrc"
 inject_aliases
 
 # =============================================================================
-# 10. Set zsh as default shell (if not already)
+# 11. Set zsh as default shell (if not already)
 # =============================================================================
 if [ "$SHELL" != "$(command -v zsh)" ]; then
     info "Setting zsh as default shell..."
