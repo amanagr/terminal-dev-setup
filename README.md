@@ -17,9 +17,10 @@ Re-running is safe — existing files are backed up to
 
 After install:
 
-1. Set your terminal font to **JetBrains Mono Nerd Font**
-2. Open tmux and press `prefix + I` to install tmux plugins
-3. Open nvim — lazy.nvim auto-installs plugins on first launch
+1. Log out and back in (Guake starts at login), or run `guake &`
+2. Press `Ctrl+\`` to open the dropdown terminal
+3. Open tmux and press `prefix + I` to install tmux plugins
+4. Open nvim — lazy.nvim auto-installs plugins on first launch
 
 ## Zulip repository setup
 
@@ -42,12 +43,18 @@ Machine-specific environment variables (like `EXTERNAL_HOST`) go in
 ## How the pieces fit together
 
 ```
-Terminal (Kitty/Ghostty)
+Guake (Ctrl+` to toggle dropdown terminal)
   └── tmux (session persistence, pane management)
         ├── Pane 1: nvim (editing)
         ├── Pane 2: ./tools/run-dev (dev server)
         └── Pane 3: shell (tests, git, lazygit)
 ```
+
+**Guake** is a dropdown terminal that slides down from the top of the
+screen when you press `Ctrl+\``. Press again to hide it. It starts at
+login and stays in the background — no need to find a terminal window.
+The install script configures it fullscreen with JetBrains Mono Nerd
+Font and no transparency.
 
 - **Ctrl-h/j/k/l** moves between tmux panes AND nvim splits seamlessly
   (vim-tmux-navigator handles the handoff).
@@ -296,6 +303,7 @@ frg "function_name"          # grep and jump to line
 
 | Tool | Purpose | Installed via |
 |------|---------|---------------|
+| guake | Dropdown terminal (Ctrl+\`) | apt |
 | neovim 0.12+ | Editor | appimage |
 | tmux | Terminal multiplexer | apt |
 | lazygit | TUI git client | GitHub releases |
