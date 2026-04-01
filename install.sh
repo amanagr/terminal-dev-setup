@@ -323,5 +323,4 @@ if [ -d "$BACKUP_DIR" ]; then
     echo ""
 fi
 echo "Terminal gotchas:"
-echo "  - MobaXterm: uncheck 'Backspace sends ^H' (conflicts with tmux C-h)"
 echo "  - Terminal type should be xterm-256color for proper color support"
