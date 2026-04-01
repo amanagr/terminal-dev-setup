@@ -18,6 +18,58 @@ Re-running is safe — existing files are backed up to
 After install: open tmux and press `prefix + I` to install tmux
 plugins, then open nvim and let lazy.nvim auto-install on first launch.
 
+## Zulip repository setup
+
+After running `install.sh`, set up the Zulip repo:
+
+```bash
+# Set your git identity
+git config --global user.name "Aman Agrawal"
+git config --global user.email "amanagr@zulip.com"
+
+# Clone the repo
+git clone git@github.com:amanagr/zulip.git ~/zulip
+cd ~/zulip
+
+# Add the upstream remote with full branch names
+git remote add upstream https://github.com/zulip/zulip.git
+git remote set-url --push upstream nobody  # prevent accidental pushes to upstream
+git fetch upstream
+
+# Provision the dev environment (installs dependencies, sets up database, etc.)
+./tools/provision
+```
+
+### Git config notes
+
+`install.sh` configures these globally:
+
+- **`core.editor`** = `nvim`
+- **`core.pager`** = `delta` (side-by-side diffs with line numbers)
+- **`diff.tool`** = `nvimdiff` (open diffs in nvim split view)
+- **`diff.colorMoved`** = `default` (highlights moved code blocks in diffs)
+- **`core.excludesFile`** = `~/.gitignore` (global gitignore)
+
+### Typical Zulip workflow
+
+```bash
+# Start your dev session
+dev                          # attach/create tmux 'dev' session
+zcd                          # cd ~/zulip
+run                          # start the dev server
+
+# In another tmux pane: work on a feature
+git fetch upstream
+gcb my-feature upstream/main # create branch from latest upstream
+
+# ... edit code in nvim ...
+zlint                        # lint modified files
+./tools/test-backend zerver.tests.test_relevant_module
+
+# Review and commit
+lg                           # open lazygit to stage/commit/rebase
+```
+
 ## Architecture notes
 
 - **Leader key** is `Space` in Neovim.
