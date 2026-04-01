@@ -92,7 +92,8 @@ vim.filetype.add({
 -- Plugin manager: lazy.nvim (auto-installs)
 -- =============================================================================
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath .. "/lua/lazy/init.lua") then
+    vim.fn.system({ "rm", "-rf", lazypath })
     vim.fn.system({
         "git", "clone", "--filter=blob:none",
         "https://github.com/folke/lazy.nvim.git",
