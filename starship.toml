@@ -1,5 +1,7 @@
 # Starship prompt — catppuccin mocha palette, minimal and fast
 
+palette = "catppuccin_mocha"
+
 format = """
 $directory\
 $git_branch\
@@ -42,9 +44,6 @@ style = "green"
 min_time = 2_000
 format = "[$duration]($style) "
 style = "bold yellow"
-
-[palette]
-palette = "catppuccin_mocha"
 
 [palettes.catppuccin_mocha]
 rosewater = "#f5e0dc"
