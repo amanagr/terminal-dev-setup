@@ -10,12 +10,22 @@
     ]
   },
   "hooks": {
-    "PermissionRequest": [
+    "Notification": [
       {
+        "matcher": "permission_prompt",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(npm prefix -g)/lib/node_modules/claude-remote-approver/bin/cli.mjs\" hook"
+            "command": "notify-send -u normal -i dialog-question 'Claude Code' 'Permission required'"
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "notify-send -u normal -i utilities-terminal 'Claude Code' 'Waiting for input'"
           }
         ]
       }
