@@ -138,9 +138,9 @@ export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
 
 # Set tmux window name to current directory
 if [ -n "$TMUX" ]; then
-    precmd() {
-        tmux rename-window "$(basename "$PWD")"
-    }
+    _tmux_rename_window() { tmux rename-window "$(basename "$PWD")"; }
+    autoload -Uz add-zsh-hook
+    add-zsh-hook precmd _tmux_rename_window
 fi
 
 # Machine-specific overrides
