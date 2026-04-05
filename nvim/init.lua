@@ -147,6 +147,10 @@ require("lazy").setup({
                             ["<C-j>"] = actions.move_selection_next,
                             ["<C-k>"] = actions.move_selection_previous,
                             ["<C-q>"] = actions.send_to_qflist + actions.open_qflist,
+                            ["<C-t>"] = require("trouble.sources.telescope").open,
+                        },
+                        n = {
+                            ["<C-t>"] = require("trouble.sources.telescope").open,
                         },
                     },
                 },
@@ -188,8 +192,45 @@ require("lazy").setup({
                     ["q"] = "actions.close",
                 },
             })
-            map("n", "<leader>e", "<cmd>Oil<CR>", { desc = "File explorer" })
             map("n", "-", "<cmd>Oil<CR>", { desc = "Open parent directory" })
+        end,
+    },
+
+    -- =========================================================================
+    -- File tree (tree view with collapse/expand and search)
+    -- =========================================================================
+    {
+        "nvim-neo-tree/neo-tree.nvim",
+        branch = "v3.x",
+        dependencies = {
+            "nvim-lua/plenary.nvim",
+            "nvim-tree/nvim-web-devicons",
+            "MunifTanjim/nui.nvim",
+        },
+        keys = {
+            { "<leader>t", "<cmd>Neotree toggle<CR>", desc = "File tree" },
+            { "<leader>e", "<cmd>Neotree reveal<CR>", desc = "File tree (reveal current)" },
+        },
+        config = function()
+            require("neo-tree").setup({
+                filesystem = {
+                    filtered_items = {
+                        visible = true,
+                        hide_dotfiles = false,
+                        hide_gitignored = false,
+                    },
+                    follow_current_file = { enabled = true },
+                    use_libuv_file_watcher = true,
+                },
+                window = {
+                    width = 35,
+                    mappings = {
+                        ["/"] = "fuzzy_finder",
+                        ["z"] = "close_all_nodes",
+                        ["Z"] = "expand_all_nodes",
+                    },
+                },
+            })
         end,
     },
 
@@ -328,7 +369,17 @@ require("lazy").setup({
             { "<leader>xl", "<cmd>Trouble loclist toggle<CR>", desc = "Location list" },
             { "<leader>xq", "<cmd>Trouble qflist toggle<CR>", desc = "Quickfix list" },
         },
-        opts = {},
+        opts = {
+            modes = {
+                telescope = {
+                    sort = { "filename", "pos" },
+                    groups = {
+                        { "directory", format = " {directory_icon}{directory} " },
+                        { "filename", format = " {file_icon}{filename} " },
+                    },
+                },
+            },
+        },
     },
 
     -- =========================================================================
@@ -398,6 +449,7 @@ require("lazy").setup({
                 { "<leader>h", group = "Hunks" },
                 { "<leader>b", group = "Buffer" },
                 { "<leader>x", group = "Diagnostics" },
+                { "<leader>t", group = "Tree" },
             })
         end,
     },
