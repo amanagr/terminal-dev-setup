@@ -48,6 +48,7 @@ tmux (session persistence, pane management)
   └── Pane 3: shell (tests, git, lazygit)
 ```
 
+- **Prefix** is `Ctrl-Space`.
 - **Ctrl-h/j/k/l** moves between tmux panes AND nvim splits seamlessly
   (vim-tmux-navigator handles the handoff).
 - **Starship** provides the prompt (git branch, python/node versions,
@@ -84,8 +85,10 @@ Split tmux panes with `prefix |` (horizontal) or `prefix -` (vertical).
 | What you want | How |
 |---------------|-----|
 | Open a file by name | `Ctrl-p` or `Space ff` in nvim |
-| Grep across the project | `Space fg` (Telescope live grep) |
-| Grep word under cursor | `Space fs` |
+| Grep across the project | `Space fg` (Telescope live grep), then `Ctrl-t` for tree view |
+| Grep word under cursor | `Space fs`, then `Ctrl-t` for tree view |
+| File tree (sidebar) | `Space t` (toggle) or `Space e` (reveal current file) |
+| Search in file tree | `/` inside neo-tree, `z`/`Z` to collapse/expand all |
 | Find and open from shell | `fe` (fzf + bat preview, opens in nvim) |
 | Ripgrep from shell, jump to line | `frg pattern` |
 | cd into a directory via fuzzy find | `fcd` |
@@ -259,6 +262,8 @@ file opens it in the parent Neovim instance (`nvim-remote` preset).
 | `prefix h/j/k/l` | Select pane (vim-style, prefix required) |
 | `prefix H/J/K/L` | Resize pane (repeatable) |
 | `prefix c` | New window (inherits current path) |
+| `prefix f g` | File tree popup — git-aware (broot) |
+| `prefix f s` | File tree popup — all files including hidden (broot) |
 | `prefix Enter` | Copy mode (vi keys: `v` select, `y` copy) |
 | `prefix r` | Reload config |
 | `prefix s` | Session picker |
@@ -305,6 +310,7 @@ frg "function_name"          # grep and jump to line
 | git-delta | Side-by-side diffs with line numbers | apt |
 | difftastic (difft) | Structural/AST-aware diffs | GitHub releases |
 | tig | TUI git log browser | apt |
+| broot | Interactive file tree browser | dystroy.org binary |
 | tree-sitter-cli | Parser compiler for nvim-treesitter | GitHub releases |
 | starship | Cross-shell prompt | install script |
 | jq | JSON processor | apt |
@@ -317,13 +323,14 @@ frg "function_name"          # grep and jump to line
 | catppuccin | Theme (mocha, transparent background) |
 | telescope.nvim + fzf-native | Fuzzy finder for files, grep, git |
 | oil.nvim | File explorer (edit filesystem like a buffer) |
+| neo-tree.nvim | File tree sidebar with search, collapse/expand |
 | gitsigns.nvim | Inline git blame, hunk staging/navigation |
 | vim-fugitive | Git commands (`:Git`, diff splits, log) |
 | nvim-treesitter | Syntax highlighting (0.12 API) |
 | nvim-treesitter-context | Sticky function/class context at top |
 | mason.nvim + mason-lspconfig | LSP server installer (pyright, ts_ls) |
 | blink.cmp | Completion (LSP, path, snippets, buffer) |
-| trouble.nvim | Diagnostics panel |
+| trouble.nvim | Diagnostics panel + tree-grouped search results |
 | snacks.nvim | Bigfile protection + LSP word highlighting |
 | vim-tmux-navigator | Seamless tmux/nvim pane switching |
 | lualine.nvim | Statusline (branch, diff, diagnostics) |
