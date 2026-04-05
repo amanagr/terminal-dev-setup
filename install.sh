@@ -63,6 +63,7 @@ APT_PACKAGES=(
     build-essential
     zsh
     fontconfig
+    xclip
 )
 
 sudo apt-get install -y "${APT_PACKAGES[@]}"
@@ -190,6 +191,25 @@ install_tree_sitter_cli() {
     ok "tree-sitter-cli $version installed"
 }
 install_tree_sitter_cli
+
+# =============================================================================
+# 5b. Broot (interactive file tree browser — used in tmux popup)
+# =============================================================================
+install_broot() {
+    if command -v broot &>/dev/null; then
+        ok "broot already installed: $(broot --version)"
+        return
+    fi
+
+    info "Installing broot..."
+    local url="https://dystroy.org/broot/download/x86_64-linux/broot"
+    curl -fsSL "$url" -o /tmp/broot
+    chmod +x /tmp/broot
+    mkdir -p "$HOME/.local/bin"
+    mv /tmp/broot "$HOME/.local/bin/broot"
+    ok "broot installed"
+}
+install_broot
 
 # =============================================================================
 # 6. Starship prompt
