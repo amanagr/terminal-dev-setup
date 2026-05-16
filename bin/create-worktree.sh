@@ -116,8 +116,14 @@ git -C "$MAIN_WORKTREE" fetch upstream
 # ---------- 4. Worktree ----------
 if [ "$NAME" = "$MAIN_NAME" ]; then
     step "Fast-forward main in $MAIN_WORKTREE"
-    git -C "$MAIN_WORKTREE" checkout main 2>/dev/null \
-        || git -C "$MAIN_WORKTREE" checkout -B main upstream/main
+    # Don't use `checkout main || checkout -B main upstream/main` — a dirty-tree
+    # checkout also exits 1, and the fallback's -B would force-reset local main
+    # and silently discard unpushed commits.
+    if git -C "$MAIN_WORKTREE" show-ref --verify --quiet refs/heads/main; then
+        git -C "$MAIN_WORKTREE" checkout main
+    else
+        git -C "$MAIN_WORKTREE" checkout -b main upstream/main
+    fi
     # pull --ff-only refuses on unpushed commits or a conflicting dirty tree.
     git -C "$MAIN_WORKTREE" pull --ff-only upstream main
 else
@@ -202,15 +208,22 @@ printf 'export EXTERNAL_HOST=localhost:%s\n' "$PORT" > "$FAKE_HOME/zulip-dev-env
     rm -f /tmp/claude-settings.json
 
     if ! command -v claude >/dev/null; then
-        curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh
-        bash /tmp/claude-install.sh
-        rm -f /tmp/claude-install.sh
+        # Pipe rather than `curl -o file; bash file` — `curl -f` only catches
+        # HTTP ≥400, not mid-transfer truncation. Piping + pipefail does.
+        curl -fsSL https://claude.ai/install.sh | bash
     fi
 
-    # Ubuntu sources ~/.bash_aliases from its default ~/.bashrc, so dropping
-    # the env file there sidesteps the bashrc append/marker dance entirely.
-    install -m 0644 /tmp/zulip-dev-env.sh ~/.bash_aliases
+    install -m 0644 /tmp/zulip-dev-env.sh ~/.zulip-dev-env.sh
     rm -f /tmp/zulip-dev-env.sh
+    # Source from ~/.bashrc once. Distinguish grep-not-found (1) from grep-error
+    # (2); a bare `|| append` would re-append on every run if ~/.bashrc became
+    # unreadable. Marker also makes re-runs idempotent.
+    mark="# managed-by: create-worktree.sh"
+    if [ -e ~/.bashrc ] && grep -Fq "$mark" ~/.bashrc; then
+        :
+    else
+        printf "\n%s\nsource ~/.zulip-dev-env.sh\n" "$mark" >> ~/.bashrc
+    fi
 ')
 
 
