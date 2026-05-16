@@ -15,8 +15,7 @@
 set -euo pipefail
 
 # ---------- Config ----------
-SCRIPT_PATH="$(readlink -f -- "$0")"
-REPO_DIR="$(readlink -f -- "$(dirname "$SCRIPT_PATH")/..")"
+REPO_DIR="$(readlink -f -- "$(dirname -- "$0")/..")"
 
 WORKTREE_ROOT="$HOME/work"
 STATE_DIR="$HOME/.config/create-worktree"
@@ -29,8 +28,15 @@ UPSTREAM_URL="https://github.com/zulip/zulip.git"
 PORT_START=9991
 PORT_STEP=10
 
-usage() {
-    sed -n '/^# create-worktree.sh/,/^$/p' "$SCRIPT_PATH" | sed 's/^# \?//'
+usage() { cat <<'EOF'
+Usage: create-worktree.sh [--rebuild] <name>
+  --rebuild   destroy this worktree's VM and re-provision it
+              (keeps the working tree, branch, and host port intact)
+
+First time with name "zulip" sets up the canonical clone at ~/work/zulip;
+other names become linked git worktrees of it. Re-runs resume from wherever
+a previous run died.
+EOF
 }
 
 # ---------- Args ----------
@@ -56,13 +62,15 @@ case "$NAME" in
         exit 2 ;;
 esac
 
-# Canonicalise so `grep -Fxq "worktree $DIR"` later matches git's own view.
-MAIN_WORKTREE="$(readlink -m -- "$MAIN_WORKTREE")"
+# Canonicalise $DIR so the porcelain match against `git worktree list` works.
 DIR="$(readlink -m -- "$WORKTREE_ROOT/$NAME")"
 
 # Per-worktree fake HOME. Zulip's Vagrantfile reads HOST_PORT from
 # $HOME/.zulip-vagrant-config; per-worktree ports need per-worktree HOMEs.
-# VAGRANT_HOME/DOCKER_CONFIG stay real so plugin cache and docker auth survive.
+# VAGRANT_HOME/DOCKER_CONFIG stay on the real $HOME so plugin cache and
+# docker auth survive the override. REAL_HOME captures $HOME before the
+# vagrant_run prefix overrides it — env-prefix assignments evaluate
+# left-to-right, so $HOME on the right side already sees the new value.
 REAL_HOME="$HOME"
 FAKE_HOME="$STATE_DIR/worktrees/$NAME/home"
 mkdir -p "$FAKE_HOME"
@@ -81,10 +89,9 @@ missing=()
 for cmd in git vagrant docker; do
     command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
-if [ ${#missing[@]} -gt 0 ]; then
-    echo "Missing: ${missing[*]} — see README.md for install hints" >&2
-    exit 1
-fi
+[ ${#missing[@]} -eq 0 ] || {
+    echo "Missing: ${missing[*]} — see README.md for install hints" >&2; exit 1
+}
 git check-ref-format "refs/heads/$NAME" 2>/dev/null || {
     echo "'$NAME' is not a legal git branch name" >&2; exit 2
 }
@@ -105,11 +112,8 @@ fi
 
 # ---------- 3. Upstream remote ----------
 step "Configure upstream remote"
-if git -C "$MAIN_WORKTREE" remote get-url upstream >/dev/null 2>&1; then
-    git -C "$MAIN_WORKTREE" remote set-url upstream "$UPSTREAM_URL"
-else
-    git -C "$MAIN_WORKTREE" remote add upstream "$UPSTREAM_URL"
-fi
+git -C "$MAIN_WORKTREE" remote add upstream "$UPSTREAM_URL" 2>/dev/null \
+    || git -C "$MAIN_WORKTREE" remote set-url upstream "$UPSTREAM_URL"
 git -C "$MAIN_WORKTREE" fetch upstream
 
 
@@ -150,32 +154,18 @@ fi
 
 
 # ---------- 6. Host port ----------
-# Marker files under $STATE_DIR/worktrees/<name>.port are the source of
-# truth. Resume: marker present → reuse it. Fresh: max(markers) + STEP,
-# or PORT_START if no markers exist yet.
+# Per-worktree marker = source of truth. Resume hits the marker; fresh
+# allocation takes max(all markers) + STEP, or PORT_START if no markers exist.
 step "Allocate host port"
 mkdir -p "$STATE_DIR/worktrees"
 PORT_MARKER="$STATE_DIR/worktrees/$NAME.port"
 
 if [ -s "$PORT_MARKER" ]; then
     PORT=$(cat "$PORT_MARKER")
-    [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge "$PORT_START" ] || {
-        echo "$PORT_MARKER has implausible content: $PORT" >&2; exit 1
-    }
     echo "already $PORT"
 else
-    MAX=0
-    shopt -s nullglob
-    for f in "$STATE_DIR/worktrees"/*.port; do
-        v=$(cat "$f" 2>/dev/null) || continue
-        [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -gt "$MAX" ] && MAX=$v
-    done
-    shopt -u nullglob
-    if [ "$MAX" -lt "$PORT_START" ]; then
-        PORT=$PORT_START
-    else
-        PORT=$((MAX + PORT_STEP))
-    fi
+    MAX=$(cat "$STATE_DIR/worktrees"/*.port 2>/dev/null | sort -n | tail -1)
+    PORT=$(( ${MAX:-0} + PORT_STEP > PORT_START ? ${MAX:-0} + PORT_STEP : PORT_START ))
     printf '%s\n' "$PORT" > "$PORT_MARKER"
     echo "$PORT"
 fi
