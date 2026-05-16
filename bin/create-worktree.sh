@@ -55,9 +55,23 @@ done
     exit 2
 }
 
-DIR="$WORKTREE_ROOT/$NAME"
+# Reject names that collide with git's special refs or with our main
+# branch. NAME="zulip" is the canonical clone (handled below); HEAD and
+# main would later break `git worktree add`.
+case "$NAME" in
+    HEAD|main) echo "'$NAME' is reserved — pick a different name" >&2; exit 2 ;;
+esac
+
+# Canonicalise the paths so symlinked $HOME / $WORKTREE_ROOT (rare, but
+# possible) don't trip up the `grep -Fxq "worktree $DIR"` match against
+# git's canonical view later. readlink -m is safe on non-existent paths.
+MAIN_WORKTREE="$(readlink -f -m -- "$MAIN_WORKTREE")"
+DIR="$(readlink -f -m -- "$WORKTREE_ROOT/$NAME")"
+
 IS_MAIN=0
-[ "$NAME" = "$MAIN_NAME" ] && IS_MAIN=1
+if [ "$NAME" = "$MAIN_NAME" ]; then
+    IS_MAIN=1
+fi
 
 # Reject worktree paths that would land inside the main clone (e.g. NAME
 # = "zulip/sub" → DIR = ~/work/zulip/sub). Nested worktrees compile but
@@ -105,6 +119,19 @@ git check-ref-format "refs/heads/$NAME" 2>/dev/null || {
     echo "'$NAME' is not a legal git branch name (see git-check-ref-format)" >&2
     exit 2
 }
+
+# Refuse if the user has a HOST_PORT line in ~/.zulip-vagrant-config —
+# that file is parsed by Zulip's Vagrantfile AFTER our patched in-tree
+# value, so it would silently override every worktree's port and make
+# them all collide on the same number.
+if [ -f "$HOME/.zulip-vagrant-config" ] \
+   && grep -qE '^HOST_PORT[[:space:]]' "$HOME/.zulip-vagrant-config"; then
+    echo "Found a HOST_PORT line in ~/.zulip-vagrant-config." >&2
+    echo "It would override our per-worktree patched port. Remove the line" >&2
+    echo "(or the whole file) and re-run." >&2
+    exit 1
+fi
+
 echo "ok"
 
 
@@ -151,10 +178,20 @@ git -C "$MAIN_WORKTREE" fetch upstream
 # branch list, so a branch made here shows up in every other worktree.
 if [ "$IS_MAIN" = 1 ]; then
     step "Reset main to upstream/main in $MAIN_WORKTREE"
-    if git -C "$MAIN_WORKTREE" rev-parse --verify main >/dev/null 2>&1 \
-       && ! git -C "$MAIN_WORKTREE" merge-base --is-ancestor main upstream/main; then
+    # Refuse if local main has commits not in upstream/main (would be
+    # silently discarded by checkout -B). Refs are fully qualified so a
+    # tag accidentally named "main" doesn't shadow the branch.
+    if git -C "$MAIN_WORKTREE" rev-parse --verify refs/heads/main >/dev/null 2>&1 \
+       && ! git -C "$MAIN_WORKTREE" merge-base --is-ancestor refs/heads/main upstream/main; then
         echo "Local main has commits not in upstream/main — refusing to reset." >&2
         echo "Push or rebase those commits, then re-run." >&2
+        exit 1
+    fi
+    # Refuse if the working tree is dirty. checkout -B without -f errors
+    # ugly when there are uncommitted conflicting changes; bail cleanly.
+    if [ -n "$(git -C "$MAIN_WORKTREE" status --porcelain)" ]; then
+        echo "Working tree in $MAIN_WORKTREE has uncommitted changes — refusing to reset." >&2
+        echo "Stash or commit them, then re-run." >&2
         exit 1
     fi
     git -C "$MAIN_WORKTREE" checkout -B main upstream/main
@@ -194,37 +231,81 @@ fi
 
 
 # ---------- 6. Host port (locked allocator) ----------
-# flock on $LOCK_FILE serialises every concurrent invocation across
-# names: two `create-worktree foo` and `create-worktree bar` in parallel
-# can no longer race the read+increment+write of last-port and end up
-# with the same number. The lock is released automatically when the
-# script exits (fd 9 closes).
+# flock on $LOCK_FILE serialises every concurrent invocation. The lock
+# is released automatically when the script exits (fd 9 closes). -w 60
+# bounds the wait so a stuck prior invocation gives up cleanly instead
+# of blocking forever.
 #
-# Marker is written *before* last-port. If the script dies between the
-# two writes, the per-worktree marker is correct and the next run reads
-# it instead of advancing — no port slot burned.
+# Allocation strategy:
+#   - if this worktree already has a marker, use it (resume case).
+#     Also reseed last-port if marker > last-port, so a future cross-
+#     name allocation doesn't collide with this one.
+#   - else allocate max(every-existing-marker, last-port) + STEP. The
+#     scan over markers means a prior partial-write (marker written,
+#     last-port not yet) doesn't cause a cross-name collision.
 step "Allocate host port"
 mkdir -p "$STATE_DIR/worktrees"
 exec 9>"$LOCK_FILE"
-flock 9
+if ! flock -w 60 9; then
+    echo "Couldn't acquire $LOCK_FILE after 60s — another invocation stuck?" >&2
+    exit 1
+fi
 PORT_MARKER="$STATE_DIR/worktrees/$NAME.port"
 LAST_PORT_FILE="$STATE_DIR/last-port"
-if [ -s "$PORT_MARKER" ]; then
-    PORT=$(<"$PORT_MARKER")
-    case "$PORT" in
-        ''|*[!0-9]*) echo "$PORT_MARKER has non-numeric content: '$PORT'" >&2; exit 1 ;;
+
+read_numeric() {  # echo $1's file content if numeric, else echo nothing
+    local f="$1" v
+    [ -s "$f" ] || return 0
+    v=$(<"$f")
+    case "$v" in
+        ''|*[!0-9]*) return 0 ;;
+        *) printf '%s' "$v" ;;
     esac
+}
+
+if [ -s "$PORT_MARKER" ]; then
+    PORT=$(read_numeric "$PORT_MARKER")
+    [ -n "$PORT" ] || { echo "$PORT_MARKER has non-numeric content" >&2; exit 1; }
+    # Reseed last-port so future cross-name allocations don't collide.
+    PREV_LAST=$(read_numeric "$LAST_PORT_FILE")
+    PREV_LAST="${PREV_LAST:-0}"
+    if [ "$PORT" -gt "$PREV_LAST" ]; then
+        echo "$PORT" > "$LAST_PORT_FILE"
+    fi
     echo "already $PORT"
 else
-    PREV=""
-    [ -s "$LAST_PORT_FILE" ] && PREV=$(<"$LAST_PORT_FILE")
-    case "$PREV" in
-        ''|*[!0-9]*) PREV=$((PORT_START - PORT_STEP)) ;;
-    esac
-    PORT=$((PREV + PORT_STEP))
-    echo "$PORT" > "$PORT_MARKER"        # source of truth — write first
+    # Refuse to silently re-allocate if a VM still exists for this DIR;
+    # it would be running on the old (now-lost) port while we patch the
+    # Vagrantfile to a new one — silent divergence.
+    if [ -d "$DIR/.vagrant" ]; then
+        state="$(env -C "$DIR" vagrant status --machine-readable 2>/dev/null \
+            | awk -F, '$3=="state"{print $4; exit}')"
+        case "$state" in
+            running|poweroff|saved|aborted)
+                echo "VM exists at $DIR (state: $state) but its port marker is missing." >&2
+                echo "Restore $PORT_MARKER, or re-run with --rebuild." >&2
+                exit 1 ;;
+        esac
+    fi
+    # Take the max over every existing marker and last-port. A nullglob
+    # avoids the literal "*.port" string when no markers exist yet.
+    shopt -s nullglob
+    MAX=0
+    for f in "$STATE_DIR/worktrees"/*.port; do
+        v=$(read_numeric "$f")
+        [ -n "$v" ] && [ "$v" -gt "$MAX" ] && MAX=$v
+    done
+    shopt -u nullglob
+    v=$(read_numeric "$LAST_PORT_FILE")
+    [ -n "$v" ] && [ "$v" -gt "$MAX" ] && MAX=$v
+    if [ "$MAX" -lt "$PORT_START" ]; then
+        PORT=$PORT_START
+    else
+        PORT=$((MAX + PORT_STEP))
+    fi
+    echo "$PORT" > "$PORT_MARKER"
     echo "$PORT" > "$LAST_PORT_FILE"
-    echo "$PORT (prev was $PREV)"
+    echo "$PORT (max was $MAX)"
 fi
 
 
@@ -234,10 +315,10 @@ fi
 # ever changes the line shape, instead of sed-no-op'ing silently.
 #
 # `git update-index --skip-worktree <file>` makes git ignore our local
-# edit (won't show in `git status`, won't try to merge upstream into
-# it). Caveats: a `git pull` conflict on this file can write through,
-# and `git reset --hard` ignores the flag entirely. Per-worktree;
-# reversible with `git update-index --no-skip-worktree`.
+# edit: won't show in `git status`, and most commands avoid writing
+# through to it. Per the git docs the flag is best-effort — merges,
+# rebases, and resets can still write through if the operation
+# requires it. Per-worktree; reversible with `--no-skip-worktree`.
 step "Patch Vagrantfile host_port = $PORT"
 VF="$DIR/Vagrantfile"
 [ -f "$VF" ] || { echo "$VF missing — vagrant clone broken?" >&2; exit 1; }
