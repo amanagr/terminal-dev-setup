@@ -1,0 +1,11 @@
+.claude/
+*.log
+__pycache__/
+
+# Local source checkouts of upstream projects (built then discarded)
+ghostty-*/
+termpdf.py/
+
+# Cargo build output for vendored Rust projects (waycal/, etc.) —
+# Cargo.lock is intentionally tracked for binary crates (reproducible builds).
+target/

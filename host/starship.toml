@@ -1,0 +1,63 @@
+# Starship prompt — GitHub Dark palette, minimal and fast
+
+palette = "github_dark"
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$cmd_duration\
+$line_break\
+$character"""
+
+[character]
+success_symbol = "[>](bold green)"
+error_symbol = "[>](bold red)"
+
+[directory]
+truncation_length = 3
+truncate_to_repo = true
+style = "bold blue"
+
+[git_branch]
+format = "[$symbol$branch(:$remote_branch)]($style) "
+style = "bold mauve"
+symbol = " "
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = "bold peach"
+
+[python]
+format = '[${symbol}${pyenv_prefix}(${version} )]($style)'
+symbol = " "
+style = "yellow"
+
+[nodejs]
+format = "[$symbol($version )]($style)"
+symbol = " "
+style = "green"
+
+[cmd_duration]
+min_time = 2_000
+format = "[$duration]($style) "
+style = "bold yellow"
+
+[palettes.github_dark]
+# Mapped onto starship's color slots from the GitHub Dark scheme
+# (terminalcolors.com/themes/github/dark). Only the names referenced
+# above need to exist, but a full palette is kept here so future
+# format strings can pull more colors without re-defining them.
+red      = "#ff7b72"
+green    = "#3fb950"
+yellow   = "#d29922"
+blue     = "#58a6ff"
+mauve    = "#bc8cff"
+cyan     = "#39c5cf"
+peach    = "#e3b341"
+text     = "#e6edf3"
+subtext  = "#7d8590"
+surface0 = "#0d1117"
+surface1 = "#21262d"
+surface2 = "#30363d"
+base     = "#010409"

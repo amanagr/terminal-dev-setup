@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git push)"
+    ],
+    "defaultMode": "plan",
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  },
+  "model": "claude-opus-4-7",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "notify-send -u normal -i dialog-information 'Claude' 'Waiting for permission'"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "figma@claude-plugins-official": true
+  },
+  "effortLevel": "high",
+  "awaySummaryEnabled": false
+}

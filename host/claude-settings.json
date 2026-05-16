@@ -1,0 +1,104 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git push)"
+    ],
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  },
+  "model": "claude-opus-4-7",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh notification"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-idle-watchdog.sh arm"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh user-prompt-submit"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh pre-tool-use"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh stop"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-idle-watchdog.sh arm"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh session-start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-tmux-state.sh session-end"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "figma@claude-plugins-official": true
+  },
+  "effortLevel": "high",
+  "awaySummaryEnabled": false
+}
