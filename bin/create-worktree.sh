@@ -47,11 +47,21 @@ for cmd in git vagrant docker; do
     command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
 if [ "${#missing[@]}" -gt 0 ]; then
-    cat >&2 <<EOF
-Missing: ${missing[*]}
-On PopOS / Ubuntu install with:
-  sudo apt-get install -y git vagrant docker.io
-  sudo usermod -aG docker "\$USER"   # re-login after this
+    echo "Missing: ${missing[*]}" >&2
+    cat >&2 <<'EOF'
+
+git + docker.io come from apt directly:
+  sudo apt-get install -y git docker.io
+  sudo usermod -aG docker "$USER"   # log out / back in after this
+
+Vagrant was dropped from Ubuntu 24.04 universe — install from
+HashiCorp's apt repo:
+  wget -O- https://apt.releases.hashicorp.com/gpg \
+    | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+    | sudo tee /etc/apt/sources.list.d/hashicorp.list
+  sudo apt-get update && sudo apt-get install -y vagrant
 EOF
     [ "$DRY" = 1 ] || exit 1
 fi
