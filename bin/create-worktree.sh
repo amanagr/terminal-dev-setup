@@ -31,7 +31,7 @@ PORT_STEP=10
 ORIGIN_URL="git@github.com:amanagr/zulip.git"
 UPSTREAM_URL="https://github.com/zulip/zulip.git"
 
-UBUNTU_VERSION="26.04"
+UBUNTU_VERSION="22.04"   # Zulip's tested default. Override with --ubuntu=NN.NN.
 DRY=0
 REBUILD=0
 NAME=""

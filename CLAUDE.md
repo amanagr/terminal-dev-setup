@@ -6,7 +6,7 @@ in this repo so they can stay in sync without juggling branches.
 | Directory | Target environment | What's in it |
 | --------- | ------------------ | ------------ |
 | [`host/`](./host/) | **PopOS** (Ubuntu 24.04 base, GNOME, Wayland) | tmux + zsh/oh-my-zsh + starship + ghostty + heavy nvim (LSP, telescope, treesitter) + claude with tmux-integrated hooks |
-| [`vm/`](./vm/)     | **Ubuntu 26.04 in Docker** (Vagrant/Docker dev VMs for Zulip) | slim claude (plan mode) + slim nvim (git-grep-driven) |
+| [`vm/`](./vm/)     | **Ubuntu 22.04 in Docker** (Vagrant/Docker dev VMs for Zulip — matches Zulip's recommended base; `--ubuntu=NN.NN` to override) | slim claude (plan mode) + slim nvim (git-grep-driven) |
 | [`bin/create-worktree.sh`](./bin/create-worktree.sh) | host → VM bridge | provisions a Zulip dev VM, ships `vm/` into it |
 
 Each subdirectory has its own `CLAUDE.md` with deploy paths and workflow notes.
