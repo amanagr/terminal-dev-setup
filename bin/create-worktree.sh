@@ -19,7 +19,12 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKTREE_ROOT="${WORKTREE_ROOT:-$HOME/work}"
-PORT_STATE_FILE="${PORT_STATE_FILE:-$HOME/.config/create-worktree/last-port}"
+# All script-private state lives under ~/.config/create-worktree/ so the Zulip
+# clone stays clean: `last-port` is the global monotonic counter, and the
+# per-worktree port assignment goes in `worktrees/<name>.port`.
+STATE_DIR="${STATE_DIR:-$HOME/.config/create-worktree}"
+PORT_STATE_FILE="${PORT_STATE_FILE:-$STATE_DIR/last-port}"
+WORKTREE_STATE_DIR="${WORKTREE_STATE_DIR:-$STATE_DIR/worktrees}"
 PORT_START=9991
 PORT_STEP=10
 
@@ -95,7 +100,7 @@ maybe_rebuild() {
     else
         skip "no .vagrant/ in $DIR"
     fi
-    [ -f "$DIR/.host-port" ] && do_ rm -f "$DIR/.host-port"
+    [ -f "$WORKTREE_STATE_DIR/$NAME.port" ] && do_ rm -f "$WORKTREE_STATE_DIR/$NAME.port"
 }
 
 # ---------------------------------------------------------------------------
@@ -158,9 +163,18 @@ ensure_main_at_upstream() {
 PORT=""
 ensure_port() {
     say "Allocate host port"
-    if [ -r "$DIR/.host-port" ]; then
-        PORT=$(cat "$DIR/.host-port")
-        skip "worktree already has port $PORT"
+    local marker="$WORKTREE_STATE_DIR/$NAME.port"
+    # Migration: earlier versions wrote .host-port inside the worktree.
+    # If we find one, adopt its value and clean it up so `git status` is
+    # clean for the user.
+    if [ -r "$DIR/.host-port" ] && [ ! -r "$marker" ] && [ "$DRY" = 0 ]; then
+        mkdir -p "$WORKTREE_STATE_DIR"
+        mv "$DIR/.host-port" "$marker"
+        echo "  · migrated $DIR/.host-port → $marker"
+    fi
+    if [ -r "$marker" ]; then
+        PORT=$(cat "$marker")
+        skip "worktree already has port $PORT (from $marker)"
         return
     fi
     local prev=""
@@ -172,9 +186,9 @@ ensure_port() {
     fi
     echo "  + port: $PORT (prev: ${prev:-<none>})"
     if [ "$DRY" = 0 ]; then
-        mkdir -p "$(dirname "$PORT_STATE_FILE")"
+        mkdir -p "$WORKTREE_STATE_DIR"
         echo "$PORT" > "$PORT_STATE_FILE"
-        echo "$PORT" > "$DIR/.host-port"
+        echo "$PORT" > "$marker"
     fi
 }
 
@@ -187,32 +201,38 @@ ensure_vagrantfile_port() {
     local vf="$DIR/Vagrantfile"
     if [ "$DRY" = 1 ] && [ ! -f "$vf" ]; then
         echo "  + sed -i -E 's/^  host_port = [0-9]+$/  host_port = $PORT/' $vf"
+        echo "  + git update-index --skip-worktree Vagrantfile  # hide local edit from git status"
         return
     fi
     [ -f "$vf" ] || { echo "  ! $vf missing — vagrant clone broken?" >&2; exit 1; }
-    if grep -qE "^  host_port = ${PORT}$" "$vf"; then
+    if ! grep -qE "^  host_port = ${PORT}$" "$vf"; then
+        do_ sed -i -E "s/^  host_port = [0-9]+$/  host_port = $PORT/" "$vf"
+    else
         skip "Vagrantfile already at port $PORT"
-        return
     fi
-    do_ sed -i -E "s/^  host_port = [0-9]+$/  host_port = $PORT/" "$vf"
+    # skip-worktree is idempotent and survives across runs.
+    do_ git -C "$DIR" update-index --skip-worktree Vagrantfile
 }
 
 # ---------------------------------------------------------------------------
 # Step 8: Dockerfile FROM. Idempotent: matches any current ubuntu version.
 # ---------------------------------------------------------------------------
 ensure_dockerfile_ubuntu() {
-    say "Patch dev-vagrant-docker/Dockerfile FROM ubuntu:$UBUNTU_VERSION"
-    local df="$DIR/tools/setup/dev-vagrant-docker/Dockerfile"
+    local df_rel="tools/setup/dev-vagrant-docker/Dockerfile"
+    local df="$DIR/$df_rel"
+    say "Patch $df_rel FROM ubuntu:$UBUNTU_VERSION"
     if [ "$DRY" = 1 ] && [ ! -f "$df" ]; then
         echo "  + sed -i -E 's|^FROM ubuntu:[0-9.]+\$|FROM ubuntu:$UBUNTU_VERSION|' $df"
+        echo "  + git update-index --skip-worktree $df_rel  # hide local edit from git status"
         return
     fi
     [ -f "$df" ] || { echo "  ! $df missing — Zulip layout changed?" >&2; exit 1; }
-    if grep -qE "^FROM ubuntu:${UBUNTU_VERSION//./\\.}$" "$df"; then
+    if ! grep -qE "^FROM ubuntu:${UBUNTU_VERSION//./\\.}$" "$df"; then
+        do_ sed -i -E "s|^FROM ubuntu:[0-9.]+$|FROM ubuntu:$UBUNTU_VERSION|" "$df"
+    else
         skip "Dockerfile already pinned to ubuntu:$UBUNTU_VERSION"
-        return
     fi
-    do_ sed -i -E "s|^FROM ubuntu:[0-9.]+$|FROM ubuntu:$UBUNTU_VERSION|" "$df"
+    do_ git -C "$DIR" update-index --skip-worktree "$df_rel"
 }
 
 # ---------------------------------------------------------------------------
