@@ -55,3 +55,34 @@ System .deb (no upstream package — community .deb is the cleanest path on Ubun
   bottom of `tmux.conf`.
 - First nvim launch downloads + compiles all treesitter parsers and Mason
   language servers; let it sit for ~30 s, then `:Lazy sync` to confirm clean.
+
+## Hardware quirks
+
+### WiFi drops after a brief period of working (MT7921e)
+
+**Symptom**: WiFi connects, works for a while, then dies. NetworkManager
+spams `link timed out` and `association took too long`. Reboot fixes it
+temporarily, then the cycle repeats.
+
+**Cause**: MediaTek MT7922 (`mt7921e` driver) is unreliable when WiFi
+powersave parks the radio. PopOS ships
+`/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf` with
+`wifi.powersave = 3` (enabled), which trips this bug.
+
+**Fix** — disable WiFi powersave and silence the noisy USB-Ethernet
+auto-connect:
+
+```bash
+sudo sed -i 's/^wifi.powersave = 3$/wifi.powersave = 2/' \
+  /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf
+sudo systemctl restart NetworkManager
+nmcli c modify "Wired connection 1" connection.autoconnect no
+```
+
+If the drop persists, add the deeper-level mitigation — disable PCIe
+ASPM for `mt7921e`:
+
+```bash
+echo "options mt7921e disable_aspm=1" | sudo tee /etc/modprobe.d/mt7921e.conf
+sudo modprobe -r mt7921e mt7921_common mt76_connac_lib mt76 && sudo modprobe mt7921e
+```
