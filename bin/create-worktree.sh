@@ -55,9 +55,11 @@ git + docker.io come from apt directly:
   sudo usermod -aG docker "$USER"   # log out / back in after this
 
 Vagrant was dropped from Ubuntu 24.04 universe — install from
-HashiCorp's apt repo:
-  wget -O- https://apt.releases.hashicorp.com/gpg \
-    | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+HashiCorp's apt repo. (curl -fsSL fails loudly on HTTP errors so we
+don't end up with a silent zero-byte keyring; gpg --dearmor --yes
+overwrites any leftover file from a prior failed attempt.)
+  curl -fsSL https://apt.releases.hashicorp.com/gpg \
+    | sudo gpg --dearmor --yes -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
 https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
     | sudo tee /etc/apt/sources.list.d/hashicorp.list
