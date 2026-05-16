@@ -18,19 +18,12 @@ tmux-state-tracking hooks that drive the pulsing-dot status glyph.
 | `bin/claude-tmux-state.sh` | `~/.local/bin/claude-tmux-state.sh` *(chmod +x)* |
 | `bin/claude-tmux-status.sh` | `~/.local/bin/claude-tmux-status.sh` *(chmod +x)* |
 | `bin/claude-idle-watchdog.sh` | `~/.local/bin/claude-idle-watchdog.sh` *(chmod +x)* |
+| `bin/claude-notify.sh` | `~/.local/bin/claude-notify.sh` *(chmod +x)* |
 | `bin/tmux-fzf-find.sh` | `~/.local/bin/tmux-fzf-find.sh` *(chmod +x)* |
 
-## What's NOT tracked here
-
-`claude-settings.json` references `~/.local/bin/claude-notify.sh` from its
-`Notification` hook — that helper was historically ambient (a one-line
-`notify-send` wrapper) and isn't tracked. Create your own at `~/.local/bin/`
-if you want a desktop pop when Claude needs permission:
-
-```bash
-#!/usr/bin/env bash
-exec notify-send -u normal -i dialog-information "Claude" "Waiting for input"
-```
+`claude-notify.sh` filters Claude's `Notification` hook so a desktop
+toast pops only when Claude needs permission for a tool, not when it's
+emitting the 60-second idle reminder.
 
 ## Dependencies
 
