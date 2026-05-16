@@ -1725,6 +1725,13 @@ require("lazy").setup({
                 -- DiffviewDiffDeleteDim (linked to Comment, fg-only) on both
                 -- panes' filler lines.
                 enhanced_diff_hl = true,
+                -- corporate/tests/stripe_fixtures/*.json has `-diff` set in
+                -- .gitattributes (so `git diff` prints "Binary files differ"),
+                -- which makes Diffview skip loading the file contents and show
+                -- an empty diff buffer. Forcing diff_binaries=true bypasses the
+                -- is_binary check; Diffview loads both revs as text and runs
+                -- nvim's diff over them.
+                diff_binaries = true,
                 file_panel = {
                     listing_style = "tree",
                     tree_options = { flatten_dirs = true, folder_statuses = "only_folded" },
