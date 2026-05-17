@@ -157,7 +157,18 @@ fi
 if command -v transmission-remote >/dev/null 2>&1; then
     command -v torrent-add >/dev/null 2>&1 && alias tadd='torrent-add'
     alias tlist='transmission-remote -l'
-    alias tdone='transmission-remote -t all -r'         # remove finished (keeps data)
+    # `transmission-remote -t all -r` removes ALL torrents (no
+    # completed-only filter exists in the CLI), so `tdone` parses
+    # `-l` output for 100%-Done rows and removes each by ID. Skips the
+    # header row (NR>1) and the trailing `Sum:` line (numeric-ID
+    # guard). `-r` removes the entry but keeps the downloaded data.
+    tdone() {
+        transmission-remote -l \
+            | awk 'NR>1 && $1 ~ /^[0-9]+$/ && $2 == "100%" { print $1 }' \
+            | while read -r id; do
+                  transmission-remote -t "$id" -r
+              done
+    }
     alias tstop='transmission-remote -t all -S'         # stop all
     alias tstart='transmission-remote -t all -s'        # start all
     alias tinfo='transmission-remote -t'                # tinfo <id> for details

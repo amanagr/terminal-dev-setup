@@ -35,8 +35,10 @@ elif command -v notify-send >/dev/null 2>&1; then
 elif command -v osascript >/dev/null 2>&1; then
     # $title and $msg are script-internal literals; if either ever becomes
     # payload-derived, switch to a heredoc to avoid AppleScript injection.
-    # Omitting `sound name` makes the notification play the user's
-    # configured default — matches terminal-notifier's `-sound default`
-    # behaviour (which honours the system selection, not a literal sound).
-    exec osascript -e "display notification \"$msg\" with title \"$title\""
+    # `sound name "default"` is the AppleScript token that plays the
+    # user-selected default notification sound — matches terminal-notifier's
+    # `-sound default`. Omitting `sound name` entirely makes the
+    # notification SILENT (verified empirically on macOS Tahoe), not
+    # default-sound, which is the opposite of parity.
+    exec osascript -e "display notification \"$msg\" with title \"$title\" sound name \"default\""
 fi

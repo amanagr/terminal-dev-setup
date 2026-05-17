@@ -248,12 +248,21 @@ orb -m "$NAME" bash <<EOF
     # pattern would silently write garbage to ~/.local/bin/tree-sitter
     # if the URL ever 404s. Download to a temp file first so a failed
     # curl aborts (set -e + -f) before anything is installed.
+    # Each install block runs in a subshell so its EXIT trap is locally
+    # scoped — without that, the second install block's \`trap … EXIT\`
+    # would overwrite the first's, and the first block's temp dir would
+    # leak on every fresh-VM provision. Subshell-EXIT fires when the
+    # block ends, runs the local trap, and then control returns to the
+    # parent heredoc shell. set -euo pipefail propagates across the
+    # subshell boundary.
     if ! command -v tree-sitter >/dev/null 2>&1; then
-        ts_tmp=\$(mktemp -d) && trap 'rm -rf "\$ts_tmp"' EXIT
-        curl -fsSL -o "\$ts_tmp/ts.zip" \\
-            https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-cli-linux-x64.zip
-        unzip -q "\$ts_tmp/ts.zip" -d "\$ts_tmp"
-        install -m 0755 "\$ts_tmp/tree-sitter" \$HOME/.local/bin/tree-sitter
+        (
+            ts_tmp=\$(mktemp -d) && trap 'rm -rf "\$ts_tmp"' EXIT
+            curl -fsSL -o "\$ts_tmp/ts.zip" \\
+                https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-cli-linux-x64.zip
+            unzip -q "\$ts_tmp/ts.zip" -d "\$ts_tmp"
+            install -m 0755 "\$ts_tmp/tree-sitter" \$HOME/.local/bin/tree-sitter
+        )
     fi
 
     # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
@@ -265,14 +274,16 @@ orb -m "$NAME" bash <<EOF
     # /opt/nvim-linux-x86_64/bin under this non-interactive heredoc
     # (PATH only gets the entry from aliases.sh in an interactive shell).
     if [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
-        # Single-quoted trap body so \$tmp is re-expanded at trap-fire
-        # rather than baked in at trap-set; harmless either way today
-        # (mktemp -d output has no whitespace), defensive going forward.
-        tmp=\$(mktemp -d) && trap 'rm -rf "\$tmp"' EXIT
-        curl -fsSL -o "\$tmp/nvim.tar.gz" \\
-            https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
-        sudo rm -rf /opt/nvim-linux-x86_64
-        sudo tar -C /opt -xzf "\$tmp/nvim.tar.gz"
+        (
+            # Single-quoted trap body so \$tmp is re-expanded at trap-fire
+            # rather than baked in at trap-set; harmless either way today
+            # (mktemp -d output has no whitespace), defensive going forward.
+            tmp=\$(mktemp -d) && trap 'rm -rf "\$tmp"' EXIT
+            curl -fsSL -o "\$tmp/nvim.tar.gz" \\
+                https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
+            sudo rm -rf /opt/nvim-linux-x86_64
+            sudo tar -C /opt -xzf "\$tmp/nvim.tar.gz"
+        )
     fi
 
     # gh: GitHub CLI via the official apt repo. Idempotent — apt-add is a

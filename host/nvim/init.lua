@@ -100,6 +100,12 @@ map("n", "<leader>fS", function()
 end, { desc = "Git grep <cword>" })
 map("n", "<leader>ff", ":find ", { desc = "Find file" })
 
+-- Force .hbs → bare `handlebars` (not the plugin's composite `html.handlebars`)
+-- so the lazy `ft` trigger below has a single filetype to key off. The
+-- plugin's bundled ftdetect would otherwise race with this and possibly
+-- win, leaving the buffer as `html.handlebars` and never firing the lazy
+-- load. The lazy spec also lists `html.handlebars` and `mustache` as a
+-- belt-and-suspenders match in case this `filetype.add` is ever removed.
 vim.filetype.add({ extension = { hbs = "handlebars" } })
 
 -- =============================================================================
@@ -133,7 +139,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
     { "projekt0n/github-nvim-theme", name = "github-theme", priority = 1000 },
-    { "mustache/vim-mustache-handlebars", ft = "handlebars" },
+    { "mustache/vim-mustache-handlebars", ft = { "handlebars", "html.handlebars", "mustache", "html.mustache" } },
 
     -- Filesystem-as-buffer.
     {

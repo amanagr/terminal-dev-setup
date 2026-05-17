@@ -242,7 +242,10 @@ require("lazy").setup({
     -- =========================================================================
     {
         "mustache/vim-mustache-handlebars",
-        ft = "handlebars",
+        -- Cover both the bare `handlebars` ft (set by vim.filetype.add
+        -- above) and the plugin's own `html.handlebars` composite ft, so
+        -- whichever ftdetect wins on .hbs files, lazy still triggers.
+        ft = { "handlebars", "html.handlebars", "mustache", "html.mustache" },
     },
 
     -- =========================================================================

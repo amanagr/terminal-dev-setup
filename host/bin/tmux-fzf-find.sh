@@ -37,6 +37,11 @@ if ! list=$(fd "$@"); then
     echo "tmux-fzf-find: fd failed" >&2
     exit 1
 fi
+# Empty list = no matches; bail before piping to fzf. Otherwise
+# `printf '%s\n' ""` emits one literal newline, which fzf reads as a
+# single empty entry — Enter would then exec `nvim -- ""` and open an
+# unnamed buffer at the popup's cwd.
+[ -n "$list" ] || exit 0
 # fzf exits 130 on Esc / Ctrl-C, 1 if no match. Both are "user quit, no
 # selection" — exit cleanly so the popup just closes.
 sel=$(printf '%s\n' "$list" | fzf \
