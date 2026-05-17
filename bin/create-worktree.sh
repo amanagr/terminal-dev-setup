@@ -291,15 +291,25 @@ orb -m "$NAME" bash <<EOF
     # package is a no-op. Keyring under /etc/apt/keyrings per current
     # Debian guidance (apt-key is deprecated since Ubuntu 22.04).
     if ! command -v gh >/dev/null 2>&1; then
-        sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
-        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
-            | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
-        sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-        arch=\$(dpkg --print-architecture)
-        echo "deb [arch=\$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
-            | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-        sudo apt-get update -qq
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
+        (
+            sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
+            # Download to a tempfile first, then sudo install — same
+            # pattern upstream gh docs use (they call wget -O \$out then
+            # cat | sudo tee). A streamed \`curl … | sudo tee\` would
+            # write a partial keyring file before pipefail caught a
+            # mid-transfer curl failure, leaving apt-get update to
+            # complain about a bad signature on the next run.
+            gh_tmp=\$(mktemp -d) && trap 'rm -rf "\$gh_tmp"' EXIT
+            curl -fsSL -o "\$gh_tmp/keyring.gpg" \\
+                https://cli.github.com/packages/githubcli-archive-keyring.gpg
+            sudo install -m 0644 -o root -g root \\
+                "\$gh_tmp/keyring.gpg" /etc/apt/keyrings/githubcli-archive-keyring.gpg
+            arch=\$(dpkg --print-architecture)
+            echo "deb [arch=\$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+                | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
+        )
     fi
 
     # Quote the RHS so a future $DIR or $ZULIP_EXTERNAL_HOST containing

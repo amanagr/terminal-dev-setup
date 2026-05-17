@@ -35,10 +35,12 @@ elif command -v notify-send >/dev/null 2>&1; then
 elif command -v osascript >/dev/null 2>&1; then
     # $title and $msg are script-internal literals; if either ever becomes
     # payload-derived, switch to a heredoc to avoid AppleScript injection.
-    # `sound name "default"` is the AppleScript token that plays the
-    # user-selected default notification sound — matches terminal-notifier's
-    # `-sound default`. Omitting `sound name` entirely makes the
-    # notification SILENT (verified empirically on macOS Tahoe), not
-    # default-sound, which is the opposite of parity.
-    exec osascript -e "display notification \"$msg\" with title \"$title\" sound name \"default\""
+    # AppleScript's `sound name "X"` looks for X.aiff in Library/Sounds;
+    # there is NO `default.aiff` or `DefaultSoundName.aiff`, so those
+    # values are silent. Glass is a real file in /System/Library/Sounds/
+    # and matches the previous shipped behaviour. osascript has no
+    # built-in way to read the user's system-default notification sound
+    # (that's terminal-notifier-specific), so true parity with the
+    # `-sound default` branch above isn't achievable from a script.
+    exec osascript -e "display notification \"$msg\" with title \"$title\" sound name \"Glass\""
 fi
