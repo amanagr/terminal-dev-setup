@@ -216,5 +216,7 @@ cat <<EOF
 Dev server:  http://$ZULIP_EXTERNAL_HOST
 SSH in:      orb -m $NAME
 First time:  cd $DIR && ./tools/provision     # ~10–20 min
-Each run:    cd $DIR && ./tools/run-dev
+Each run:    cd $DIR && ./tools/run-dev --interface=''
+             (--interface='' makes run-dev bind to all VM interfaces;
+              without it, $NAME.orb.local is unreachable from the host)
 EOF

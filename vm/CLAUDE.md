@@ -17,7 +17,7 @@ Claude; Neovim editing happens on the host.
 | ---- | --- |
 | Attach (shell as your Mac user) | `orb -m <name>` |
 | Detach | `exit` or `Ctrl-D` |
-| Run dev server (inside VM) | `cd ~/work/<name> && ./tools/run-dev` — serves http://&lt;name&gt;.orb.local:9991 |
+| Run dev server (inside VM) | `cd ~/work/<name> && ./tools/run-dev --interface=''` — serves http://&lt;name&gt;.orb.local:9991. The empty `--interface` is required — without it, run-dev binds only to 127.0.0.1 inside the VM and the `<name>.orb.local` address (a separate VM interface) is unreachable. |
 | First-time provision (inside VM) | `cd ~/work/<name> && ./tools/provision` (~10–20 min) |
 | Start Claude (inside VM) | `claude` first time, `claude --continue` to resume last session in cwd, `claude --resume` for picker |
 
