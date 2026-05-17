@@ -1670,7 +1670,22 @@ require("lazy").setup({
                 function()
                     local base = base_branch()
                     if not base then return end
-                    vim.cmd(("tab Git log %s..HEAD --oneline --decorate"):format(base))
+                    -- Fall back to "last 30 commits" when HEAD is at the
+                    -- base (no branch commits to show) — otherwise the
+                    -- fugitive buffer is silently empty and gives the
+                    -- impression the mapping is broken.
+                    local ahead = tonumber(vim.fn.systemlist({
+                        "git", "rev-list", "--count", base .. "..HEAD",
+                    })[1] or "0") or 0
+                    if ahead > 0 then
+                        vim.cmd(("tab Git log %s..HEAD --oneline --decorate"):format(base))
+                    else
+                        vim.notify(
+                            ("HEAD is at %s — showing last 30 commits"):format(base),
+                            vim.log.levels.INFO
+                        )
+                        vim.cmd("tab Git log -30 --oneline --decorate")
+                    end
                 end,
                 desc = "Git log <base>..HEAD",
             },
@@ -1719,11 +1734,25 @@ require("lazy").setup({
                 local msg = vim.fn.systemlist({
                     "git", "log", "-1", "--format=%h %s%n%n%b", commit,
                 })
-                local base = base_branch() or "HEAD~30"
-                local rev_range = (base and base ~= "HEAD~30") and (base .. "..HEAD") or "-30"
-                local log = vim.fn.systemlist({
-                    "git", "log", rev_range, "--oneline", "--decorate",
-                })
+                -- Mirror <leader>gl's fallback: scope to <base>..HEAD
+                -- when the branch is ahead, otherwise show the last 30
+                -- commits so the picker is never empty on a freshly-cut
+                -- worktree whose HEAD equals upstream.
+                local base = base_branch()
+                local log_args = { "git", "log", "--oneline", "--decorate" }
+                if base then
+                    local ahead = tonumber(vim.fn.systemlist({
+                        "git", "rev-list", "--count", base .. "..HEAD",
+                    })[1] or "0") or 0
+                    if ahead > 0 then
+                        table.insert(log_args, base .. "..HEAD")
+                    else
+                        table.insert(log_args, "-30")
+                    end
+                else
+                    table.insert(log_args, "-30")
+                end
+                local log = vim.fn.systemlist(log_args)
 
                 local sep = string.rep("─", math.max(40, vim.o.columns - 4))
                 local lines = {}
