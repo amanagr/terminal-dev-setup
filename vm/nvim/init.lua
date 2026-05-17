@@ -1860,6 +1860,13 @@ require("lazy").setup({
     -- =========================================================================
     {
         "nvim-treesitter/nvim-treesitter",
+        -- Pin to the new `main` branch explicitly. `require("nvim-treesitter").install`
+        -- and per-FileType `vim.treesitter.start` are the main-branch API; the
+        -- `master` branch (still the GitHub default at time of writing) ships a
+        -- different module that doesn't expose `install` and would error at config
+        -- time. lazy.nvim happens to pick main today, but locking it here makes
+        -- that intentional rather than incidental.
+        branch = "main",
         lazy = false,
         build = ":TSUpdate",
         config = function()
@@ -1872,11 +1879,13 @@ require("lazy").setup({
             -- Enable treesitter highlighting for all filetypes with a parser.
             -- Skip when Snacks has flagged the buffer as bigfile — running
             -- the full parser on a multi-MB minified JS file can lock the
-            -- editor for several seconds on each cursor move.
+            -- editor for several seconds on each cursor move. snacks.bigfile
+            -- marks bigfiles by switching the *filetype* to "bigfile" (not a
+            -- buffer variable), so check filetype here.
             vim.api.nvim_create_autocmd("FileType", {
                 group = vim.api.nvim_create_augroup("ts_highlight", { clear = true }),
                 callback = function(args)
-                    if vim.b[args.buf].bigfile then return end
+                    if vim.bo[args.buf].filetype == "bigfile" then return end
                     pcall(vim.treesitter.start)
                 end,
             })
@@ -2004,8 +2013,10 @@ require("lazy").setup({
             words = { enabled = true },
         },
         keys = {
-            { "]]", function() Snacks.words.jump(1, true) end, desc = "Next LSP reference" },
-            { "[[", function() Snacks.words.jump(-1, true) end, desc = "Prev LSP reference" },
+            -- jump(count, cycle): pass vim.v.count1 so a [count] prefix actually
+            -- advances by that many references rather than always one.
+            { "]]", function() Snacks.words.jump(vim.v.count1, true) end, desc = "Next LSP reference" },
+            { "[[", function() Snacks.words.jump(-vim.v.count1, true) end, desc = "Prev LSP reference" },
         },
     },
 

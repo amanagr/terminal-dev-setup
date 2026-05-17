@@ -85,7 +85,9 @@ gdiverg() {
     local base="${1:-upstream/main}"
     echo "Commits ahead of $base:"
     git log --oneline "$base"..HEAD
-    echo "\nCommits behind $base:"
+    # printf rather than echo so the \n is interpreted regardless of
+    # whether BSD_ECHO is set in the user's shell options.
+    printf '\nCommits behind %s:\n' "$base"
     git log --oneline HEAD.."$base"
 }
 
@@ -102,7 +104,10 @@ fi
 # --- Fuzzy finding (fzf) ---
 # Ctrl-T: fuzzy find files, Ctrl-R: fuzzy history
 if command -v fzf &>/dev/null; then
-    eval "$(fzf --zsh 2>/dev/null)"
+    # No `2>/dev/null`: `fzf --zsh` requires fzf ≥ 0.48 — if it's
+    # missing we want the error visible so the missing Ctrl-T/Ctrl-R
+    # bindings get diagnosed instead of silently disappearing.
+    eval "$(fzf --zsh)"
 
     export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
@@ -157,7 +162,9 @@ fi
 # quoted tilde isn't expanded as a command word (only `cd`-style builtins
 # re-expand it on the argument side).
 alias zcd="cd $HOME/work/zulip"
-alias stripe="cd $HOME/zulip-stripe/var/stripe"
+# `zstripe` rather than `stripe` to avoid shadowing the Stripe.com CLI
+# binary if/when it ever lands on PATH.
+alias zstripe="cd $HOME/zulip-stripe/var/stripe"
 alias run='./tools/run-dev'
 alias z="$HOME/terminal-dev-setup/bin/create-worktree.sh"
 
@@ -168,16 +175,24 @@ zlint() {
 # --- Paths ---
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 # Only prepend npm's global bin if npm is installed — otherwise an empty
-# `$(npm prefix -g)` yields a stray /bin entry. `npm config get prefix`
-# is preferred over the deprecated `npm prefix -g`.
+# `$(npm config get prefix)` yields a stray /bin entry. Either
+# `npm config get prefix` or `npm prefix -g` work; using the config form
+# is marginally faster (no scan of the cwd hierarchy).
 if command -v npm >/dev/null 2>&1; then
     export PATH="$(npm config get prefix 2>/dev/null)/bin:$PATH"
 fi
 
 # Set tmux window name to current directory. ${PWD:t} (zsh tail-modifier)
-# avoids forking `basename` on every prompt.
+# avoids forking `basename` on every prompt; the $_last_rn cache then
+# skips the `tmux rename-window` IPC entirely on prompts where $PWD
+# hasn't moved — saves a few ms per prompt over SSH where every IPC
+# round-trips to the tmux server.
 if [ -n "$TMUX" ]; then
-    _tmux_rename_window() { tmux rename-window "${PWD:t}"; }
+    _tmux_rename_window() {
+        [[ $PWD == ${_last_rn-} ]] && return
+        tmux rename-window "${PWD:t}"
+        _last_rn=$PWD
+    }
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd _tmux_rename_window
 fi

@@ -195,8 +195,12 @@ orb -m "$NAME" bash <<EOF
     install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
 
     if ! command -v claude >/dev/null; then
-        # Pipe rather than \`curl -o file; bash file\` — \`curl -f\` only catches
-        # HTTP ≥400, not mid-transfer truncation. Piping + pipefail does.
+        # \`curl -f\` catches HTTP ≥400; the heredoc's set -o pipefail
+        # propagates a curl exit-on-disconnect into bash so a partial
+        # script doesn't run to completion. (Pipefail doesn't *prevent*
+        # bash from executing the bytes it already received before
+        # curl errors — for a hard transactional guarantee, download
+        # to a temp file and \`bash file\` it; that's overkill here.)
         curl -fsSL https://claude.ai/install.sh | bash
     fi
 
@@ -211,7 +215,12 @@ orb -m "$NAME" bash <<EOF
     nvim_deps="build-essential ripgrep fd-find sqlite3 libsqlite3-dev unzip"
     missing=""
     for pkg in \$nvim_deps; do
-        dpkg -s "\$pkg" >/dev/null 2>&1 || missing="\$missing \$pkg"
+        # dpkg-query -W -f='\${Status}' distinguishes "install ok installed"
+        # from "deinstall ok config-files" — the latter has the .deb metadata
+        # but no binary, so a plain \`dpkg -s\` exits 0 and we'd skip the
+        # apt-get install. Edge case on a recycled VM image.
+        status=\$(dpkg-query -W -f='\${Status}' "\$pkg" 2>/dev/null || true)
+        [ "\$status" = "install ok installed" ] || missing="\$missing \$pkg"
     done
     if [ -n "\$missing" ]; then
         sudo apt-get update -qq
@@ -248,7 +257,10 @@ orb -m "$NAME" bash <<EOF
     # — pulling the official build also matches the host (≥ 0.12) so the
     # same init.lua works on both. Asset name is nvim-linux-x86_64.tar.gz
     # (renamed upstream from nvim-linux64.tar.gz in late 2024).
-    if ! command -v nvim >/dev/null 2>&1 && [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
+    # Check the install path directly: \`command -v nvim\` doesn't see
+    # /opt/nvim-linux-x86_64/bin under this non-interactive heredoc
+    # (PATH only gets the entry from aliases.sh in an interactive shell).
+    if [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
         tmp=\$(mktemp -d) && trap "rm -rf \$tmp" EXIT
         curl -fsSL -o "\$tmp/nvim.tar.gz" \\
             https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
@@ -261,7 +273,7 @@ orb -m "$NAME" bash <<EOF
     # package is a no-op. Keyring under /etc/apt/keyrings per current
     # Debian guidance (apt-key is deprecated since Ubuntu 22.04).
     if ! command -v gh >/dev/null 2>&1; then
-        sudo mkdir -p -m 755 /etc/apt/keyrings
+        sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
             | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
         sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg

@@ -1,6 +1,9 @@
 -- =============================================================================
--- init.lua — slim VM-side Neovim config.
+-- init.lua — slim host-side Neovim config.
 -- Git-grep-driven. No LSP / no treesitter / no fuzzy fancy. Boots in <500ms.
+-- The full-featured nvim with LSP/Mason/telescope/treesitter lives in
+-- ../../vm/nvim/init.lua and ships to the OrbStack VMs where the
+-- language servers can see the real Python venv and node_modules.
 -- =============================================================================
 
 vim.g.mapleader = " "
@@ -44,8 +47,11 @@ opt.showmode = false
 opt.grepprg = "git --no-pager grep --no-color -n --column"
 opt.grepformat = "%f:%l:%c:%m"
 
--- Built-in :find descends arbitrarily under cwd (replacement for telescope's find_files).
-opt.path:append("**")
+-- Built-in :find is intentionally NOT augmented with "**" — `:help 'path'`
+-- warns that `**` makes :find walk the whole tree on every completion,
+-- which is fine in a dotfiles repo but a several-second stall in a
+-- monorepo. The git-grep workflow (`:Ggrep` / `<leader>fs`) replaces
+-- find for real navigation; bare `:find` still works for known paths.
 
 opt.sessionoptions = {
     "buffers", "curdir", "folds", "help", "tabpages",
@@ -100,17 +106,27 @@ vim.filetype.add({ extension = { hbs = "handlebars" } })
 -- Plugin manager: lazy.nvim (auto-installs on first launch)
 -- =============================================================================
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
--- (vim.uv or vim.loop) so this bootstrap works on Neovim 0.8–0.9 too,
--- not just the 0.10+ where vim.uv is the canonical name. Matches
--- upstream's recommended snippet.
+-- (vim.uv or vim.loop): vim.uv is canonical from 0.10 onward; the
+-- vim.loop alias is kept for one-shot bootstrap snippets so the same
+-- file works on any reasonable nvim. Matches upstream's recommended
+-- pattern.
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
     local out = vim.fn.system({
         "git", "clone", "--filter=blob:none",
         "https://github.com/folke/lazy.nvim.git",
         "--branch=stable", lazypath,
     })
+    -- Upstream-recommended failure pattern: echo the git error and wait
+    -- for a keypress before exiting, so the user actually sees what
+    -- went wrong instead of nvim dying with an unreadable stack.
     if vim.v.shell_error ~= 0 then
-        error("lazy.nvim clone failed:\n" .. out)
+        vim.api.nvim_echo({
+            { "lazy.nvim clone failed:\n", "ErrorMsg" },
+            { out, "WarningMsg" },
+            { "\nPress any key to exit..." },
+        }, true, {})
+        vim.fn.getchar()
+        os.exit(1)
     end
 end
 vim.opt.rtp:prepend(lazypath)

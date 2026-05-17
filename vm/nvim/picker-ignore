@@ -12,4 +12,5 @@
 #   <leader>fG  Live grep including ignored
 #
 # Add patterns below this line:
-.git/
+# (fd already ignores VCS dirs (.git/.hg/.svn) by default — no need
+# to list .git/ explicitly; --no-ignore-vcs is the opt-out.)

@@ -35,6 +35,15 @@ set -u
 event=${1:-}
 payload=$(cat 2>/dev/null || true)
 
+# Diagnostic: set CLAUDE_HOOK_DEBUG=1 in ~/.claude/settings.json `env`
+# to append every payload to /tmp/claude-hooks.log so the JSON schema
+# (notably .notification_type, which isn't fully pinned by the public
+# hook docs) can be verified from a live fire. Cheap when off.
+if [ -n "${CLAUDE_HOOK_DEBUG:-}" ]; then
+    printf '%s %s\n%s\n---\n' "$(date -Iseconds)" "$event" "$payload" \
+        >> /tmp/claude-hooks.log 2>/dev/null || true
+fi
+
 case "$event" in
     user-prompt-submit|pre-tool-use) state=working ;;
     stop)               state=idle ;;
@@ -83,7 +92,16 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
                 tmux set-option -p -t "$pane" @claude_state "$state" 2>/dev/null || true
             fi
             adjust_interval
-            tmux refresh-client -S 2>/dev/null || true
+            # Bare `refresh-client -S` only refreshes whichever client
+            # tmux happens to attribute to this connection (often the
+            # most-recently-attached one); other attached clients
+            # wouldn't see the new state until their own status-interval
+            # ticked. Loop over every attached client and refresh each
+            # by tty so multi-client setups stay in sync.
+            tmux list-clients -F '#{client_tty}' 2>/dev/null \
+                | while IFS= read -r tty; do
+                      [ -n "$tty" ] && tmux refresh-client -S -t "$tty" 2>/dev/null || true
+                  done
             exit 0
             ;;
     esac
