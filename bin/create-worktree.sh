@@ -30,7 +30,7 @@ MAIN_NAME="zulip"
 MAIN_WORKTREE="$WORKTREE_ROOT/$MAIN_NAME"
 
 ORIGIN_URL="git@github.com:amanagr/zulip.git"
-UPSTREAM_URL="https://github.com/zulip/zulip.git"
+UPSTREAM_URL="git@github.com:zulip/zulip.git"
 
 # amd64 under Rosetta is within ~10% of native on Apple Silicon and
 # avoids any arm64 surprises in Zulip's provision (downloaded binaries,
