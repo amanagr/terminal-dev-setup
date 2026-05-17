@@ -10,18 +10,6 @@
     ]
   },
   "model": "claude-opus-4-7",
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "notify-send -u normal -i dialog-information 'Claude' 'Waiting for permission'"
-          }
-        ]
-      }
-    ]
-  },
   "enabledPlugins": {
     "figma@claude-plugins-official": true
   },

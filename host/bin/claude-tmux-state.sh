@@ -68,7 +68,10 @@ pid=$PPID
 prev_pid=
 while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
     comm=$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ' || true)
-    case "$comm" in
+    # ${comm##*/} strips any leading absolute path — macOS `ps -o comm=`
+    # returns the full path (e.g. /opt/homebrew/bin/tmux) when tmux was
+    # launched with one, which broke the bare `tmux*` glob.
+    case "${comm##*/}" in
         tmux*)
             [ -n "$prev_pid" ] || exit 0
             pane=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null \

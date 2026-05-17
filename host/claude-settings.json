@@ -21,10 +21,6 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/claude-tmux-state.sh notification"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-idle-watchdog.sh arm"
           }
         ]
       }
@@ -35,10 +31,6 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/claude-tmux-state.sh user-prompt-submit"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
           }
         ]
       }
@@ -49,10 +41,6 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/claude-tmux-state.sh pre-tool-use"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
           }
         ]
       }
@@ -63,10 +51,6 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/claude-tmux-state.sh stop"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-idle-watchdog.sh arm"
           }
         ]
       }
@@ -87,10 +71,6 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/claude-tmux-state.sh session-end"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.local/bin/claude-idle-watchdog.sh cancel"
           }
         ]
       }

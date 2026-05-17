@@ -34,4 +34,6 @@ sel=$(fd "$@" | fzf \
     --preview-window 'right,60%') || exit 0
 
 [ -n "$sel" ] || exit 0
-exec "${EDITOR:-nvim}" "$sel"
+# `--` so a top-level filename starting with `-` (e.g. `-foo.txt` at
+# cwd root) isn't parsed as a flag by the editor.
+exec "${EDITOR:-nvim}" -- "$sel"

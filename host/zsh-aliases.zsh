@@ -14,14 +14,20 @@ alias tl='tmux list-sessions'
 alias tn='tmux new-session -s'
 alias tk='tmux kill-session -t'
 
-# Auto-attach to 'dev' session or create it
-dev() {
-    tmux attach -t dev 2>/dev/null || tmux new-session -s dev
+# Auto-attach to 'dev' session or create it. Inside tmux, switch-client
+# instead of attach to avoid the "sessions should be nested with care"
+# refusal.
+_tmux_goto() {
+    local name="$1"
+    if [ -n "$TMUX" ]; then
+        tmux switch-client -t "$name" 2>/dev/null \
+            || { tmux new-session -d -s "$name" && tmux switch-client -t "$name"; }
+    else
+        tmux attach -t "$name" 2>/dev/null || tmux new-session -s "$name"
+    fi
 }
-
-ops() {
-    tmux attach -t ops 2>/dev/null || tmux new-session -s ops
-}
+dev() { _tmux_goto dev; }
+ops() { _tmux_goto ops; }
 
 # --- Editor ---
 alias v='nvim'
@@ -96,7 +102,7 @@ fi
 # --- Fuzzy finding (fzf) ---
 # Ctrl-T: fuzzy find files, Ctrl-R: fuzzy history
 if command -v fzf &>/dev/null; then
-    eval "$(fzf --zsh 2>/dev/null)" || source /usr/share/doc/fzf/examples/key-bindings.zsh 2>/dev/null
+    eval "$(fzf --zsh 2>/dev/null)"
 
     export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
@@ -132,33 +138,46 @@ if command -v fzf &>/dev/null; then
 fi
 
 # --- transmission (BitTorrent daemon over localhost RPC) ---
-# `tadd <magnet|url|file>` mirrors what the magnet:// handler does, so
-# you can drop torrents in from the shell without remembering the long
-# transmission-remote flag. The other aliases are everyday view/control.
-alias tadd='torrent-add'
-alias tlist='transmission-remote -l'
-alias tdone='transmission-remote -t all -r'             # remove finished (keeps data)
-alias tstop='transmission-remote -t all -S'             # stop all
-alias tstart='transmission-remote -t all -s'            # start all
-alias tinfo='transmission-remote -t'                    # tinfo <id> for details
+# Linux-only on this setup — guarded so missing transmission-remote on
+# Mac doesn't leave the aliases pointing at "command not found". `tadd`
+# uses a host-side `torrent-add` script (magnet:// handler); skip it if
+# absent.
+if command -v transmission-remote >/dev/null 2>&1; then
+    command -v torrent-add >/dev/null 2>&1 && alias tadd='torrent-add'
+    alias tlist='transmission-remote -l'
+    alias tdone='transmission-remote -t all -r'         # remove finished (keeps data)
+    alias tstop='transmission-remote -t all -S'         # stop all
+    alias tstart='transmission-remote -t all -s'        # start all
+    alias tinfo='transmission-remote -t'                # tinfo <id> for details
+fi
 
 # --- Zulip-specific helpers ---
-alias zcd='cd ~/zulip'
-alias stripe='cd ~/zulip-stripe/var/stripe'
+# Zulip lives under ~/work/<name> on this setup (see bin/create-worktree.sh).
+# Double-quoted aliases so $HOME expands at definition time — a single-
+# quoted tilde isn't expanded as a command word (only `cd`-style builtins
+# re-expand it on the argument side).
+alias zcd="cd $HOME/work/zulip"
+alias stripe="cd $HOME/zulip-stripe/var/stripe"
 alias run='./tools/run-dev'
-alias z='~/zulip/tools/create-worktree'
+alias z="$HOME/terminal-dev-setup/bin/create-worktree.sh"
 
 zlint() {
-    cd ~/zulip && ./tools/lint --modified
+    ( cd "$HOME/work/zulip" && ./tools/lint --modified )
 }
 
 # --- Paths ---
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
-export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
+# Only prepend npm's global bin if npm is installed — otherwise an empty
+# `$(npm prefix -g)` yields a stray /bin entry. `npm config get prefix`
+# is preferred over the deprecated `npm prefix -g`.
+if command -v npm >/dev/null 2>&1; then
+    export PATH="$(npm config get prefix 2>/dev/null)/bin:$PATH"
+fi
 
-# Set tmux window name to current directory
+# Set tmux window name to current directory. ${PWD:t} (zsh tail-modifier)
+# avoids forking `basename` on every prompt.
 if [ -n "$TMUX" ]; then
-    _tmux_rename_window() { tmux rename-window "$(basename "$PWD")"; }
+    _tmux_rename_window() { tmux rename-window "${PWD:t}"; }
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd _tmux_rename_window
 fi

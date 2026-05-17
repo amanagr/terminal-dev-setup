@@ -1897,9 +1897,9 @@ require("lazy").setup({
     -- LSP (native vim.lsp.config — Neovim 0.11+)
     -- =========================================================================
     {
-        "williamboman/mason.nvim",
+        "mason-org/mason.nvim",
         dependencies = {
-            "williamboman/mason-lspconfig.nvim",
+            "mason-org/mason-lspconfig.nvim",
             -- mason-lspconfig 2.x is a thin bridge; the default `cmd`/
             -- root_dir/filetypes for each server live in nvim-lspconfig.
             -- Without it, vim.lsp.enable("pyright") errors with
@@ -2069,7 +2069,6 @@ require("lazy").setup({
                 { "<leader>h", group = "Hunks" },
                 { "<leader>b", group = "Buffer" },
                 { "<leader>x", group = "Diagnostics" },
-                { "<leader>t", group = "Tree" },
                 { "<leader>r", group = "Run" },
                 { "<leader>q", group = "Session" },
                 -- Note: <leader>t is the Neotree toggle (a direct keymap,

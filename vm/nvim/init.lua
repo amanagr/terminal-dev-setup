@@ -100,13 +100,18 @@ vim.filetype.add({ extension = { hbs = "handlebars" } })
 -- Plugin manager: lazy.nvim (auto-installs on first launch)
 -- =============================================================================
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath .. "/lua/lazy/init.lua") then
-    vim.fn.system({ "rm", "-rf", lazypath })
-    vim.fn.system({
+-- (vim.uv or vim.loop) so this bootstrap works on Neovim 0.8–0.9 too,
+-- not just the 0.10+ where vim.uv is the canonical name. Matches
+-- upstream's recommended snippet.
+if not (vim.uv or vim.loop).fs_stat(lazypath) then
+    local out = vim.fn.system({
         "git", "clone", "--filter=blob:none",
         "https://github.com/folke/lazy.nvim.git",
         "--branch=stable", lazypath,
     })
+    if vim.v.shell_error ~= 0 then
+        error("lazy.nvim clone failed:\n" .. out)
+    end
 end
 vim.opt.rtp:prepend(lazypath)
 

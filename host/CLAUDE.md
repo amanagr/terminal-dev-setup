@@ -1,8 +1,12 @@
-# host/ — PopOS dev configs
+# host/ — macOS dev configs
 
-These files configure the local PopOS machine: tmux, zsh + oh-my-zsh, Starship,
+These files configure the local Mac: tmux, zsh + oh-my-zsh, Starship,
 Ghostty, full Neovim (LSP / telescope / treesitter), and Claude with the
 tmux-state-tracking hooks that drive the pulsing-dot status glyph.
+
+Also works on modern Linux distros (PopOS, Ubuntu 24.04+) — the few
+OS-specific bits (`copy-command pbcopy`, terminal-notifier fallback chain)
+are guarded.
 
 ## Deploy paths
 
@@ -17,41 +21,70 @@ tmux-state-tracking hooks that drive the pulsing-dot status glyph.
 | `claude-settings.json` | `~/.claude/settings.json` |
 | `bin/claude-tmux-state.sh` | `~/.local/bin/claude-tmux-state.sh` *(chmod +x)* |
 | `bin/claude-tmux-status.sh` | `~/.local/bin/claude-tmux-status.sh` *(chmod +x)* |
-| `bin/claude-idle-watchdog.sh` | `~/.local/bin/claude-idle-watchdog.sh` *(chmod +x)* |
 | `bin/claude-notify.sh` | `~/.local/bin/claude-notify.sh` *(chmod +x)* |
 | `bin/tmux-fzf-find.sh` | `~/.local/bin/tmux-fzf-find.sh` *(chmod +x)* |
 
+Add one line to `~/.zshrc` so the aliases load:
+
+```sh
+[ -f ~/.config/terminal-dev-setup/aliases.zsh ] && source ~/.config/terminal-dev-setup/aliases.zsh
+```
+
 `claude-notify.sh` filters Claude's `Notification` hook so a desktop
 toast pops only when Claude needs permission for a tool, not when it's
-emitting the 60-second idle reminder.
+emitting the 60-second idle reminder. The notifier is auto-detected:
+`terminal-notifier` first, then `notify-send` (Linux), then `osascript`
+as a last-resort macOS fallback.
 
-## Dependencies
+**First-run permission on macOS**: macOS prompts to allow notifications
+from `terminal-notifier` the first time it fires. If you dismiss or deny
+the prompt the script silently no-ops (terminal-notifier exits 0 even
+when notifications are blocked) — re-enable under **System Settings →
+Notifications → terminal-notifier**.
+
+## Dependencies (macOS)
+
+Install Homebrew first (`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`), then:
+
+```sh
+brew install neovim starship fzf fd bat jq gh terminal-notifier ripgrep \
+             git-delta tree-sitter-cli ruff tmux
+brew install --cask ghostty font-jetbrains-mono-nerd-font
+```
+
+(`tree-sitter-cli` is the binary; the bare `tree-sitter` formula installs
+only the library, which isn't what nvim-treesitter needs for grammar
+development.)
+
+Then:
+
+- **oh-my-zsh**: `sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"`
+- **oh-my-zsh plugins**: clone `zsh-autosuggestions` and `zsh-syntax-highlighting` into `${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/` (the default-substitution form is safer in a fresh shell where `$ZSH_CUSTOM` isn't set yet).
+- **TPM** for tmux plugins: `git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm`, then `prefix + I` inside tmux
+
+## Dependencies (Linux — for reference)
 
 apt: `tmux tig ripgrep fzf bat git-delta build-essential nodejs npm wl-clipboard libnotify-bin fontconfig zsh`
 
-User-local (no sudo):
-- **Neovim ≥ 0.12** from the [official tarball](https://github.com/neovim/neovim/releases/latest) (apt's Neovim lags behind what the config needs)
-- **JetBrainsMono Nerd Font** from [nerd-fonts releases](https://github.com/ryanoasis/nerd-fonts/releases/latest) — Ghostty's `font-family` calls for `JetBrainsMono Nerd Font Mono` (the **Mono** variant; single-cell glyphs keep statusline borders straight)
-- **oh-my-zsh** + the `zsh-autosuggestions` and `zsh-syntax-highlighting` custom plugins
-- **Starship** prompt (`curl -sS https://starship.rs/install.sh | sh -s -- --bin-dir ~/.local/bin --yes`)
-- **TPM** for tmux plugins: `git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm`, then `prefix + I` inside tmux
-- **tree-sitter CLI** (needed by nvim-treesitter ≥ 0.12 to compile parsers): `npm install --prefix ~/.local -g tree-sitter-cli`
-- **Ruff** (Python linter / LSP): `curl -LsSf https://astral.sh/ruff/install.sh | sh` — Mason's PyPI installer needs pip/pipx so we install the standalone binary
-
-System .deb (no upstream package — community .deb is the cleanest path on Ubuntu 24.04):
-- **Ghostty**: download the matching `ghostty_*_amd64_24.04.deb` from [mkasberg/ghostty-ubuntu](https://github.com/mkasberg/ghostty-ubuntu/releases/latest), `sudo dpkg -i` it, then `sudo apt-get install -fy`
+User-local additions: Neovim ≥ 0.12 tarball, JetBrainsMono Nerd Font from
+nerd-fonts releases, oh-my-zsh + plugins, Starship, TPM, tree-sitter CLI,
+Ruff. Ghostty: install the `ghostty_*_amd64_24.04.deb` from
+[mkasberg/ghostty-ubuntu](https://github.com/mkasberg/ghostty-ubuntu/releases/latest).
 
 ## After deploy
 
-- `chsh -s /usr/bin/zsh` — make zsh the login shell.
-- Inside tmux: `prefix + I` (capital I) to fetch the plugins listed at the
-  bottom of `tmux.conf`.
+- `chsh -s /bin/zsh` (macOS already defaults to it; harmless to confirm).
+- Inside tmux: `prefix + I` (capital I) to fetch the plugins listed at
+  the bottom of `tmux.conf`.
 - First nvim launch downloads + compiles all treesitter parsers and Mason
-  language servers; let it sit for ~30 s, then `:Lazy sync` to confirm clean.
+  language servers; let it sit for ~30 s, then `:Lazy sync` to confirm
+  clean. Run `:checkhealth provider` to verify the clipboard and Python
+  providers — on macOS, `unnamedplus` auto-routes through `pbcopy` /
+  `pbpaste` without extra config.
 
 ## Hardware quirks
 
-### WiFi drops after a brief period of working (MT7921e)
+### Linux: WiFi drops after a brief period of working (MT7921e)
 
 **Symptom**: WiFi connects, works for a while, then dies. NetworkManager
 spams `link timed out` and `association took too long`. Reboot fixes it
