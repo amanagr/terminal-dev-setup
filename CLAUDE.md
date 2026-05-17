@@ -6,7 +6,7 @@ in this repo so they can stay in sync without juggling branches.
 | Directory | Target environment | What's in it |
 | --------- | ------------------ | ------------ |
 | [`host/`](./host/) | **macOS** (Apple Silicon, primary) — also works on modern Linux | tmux + zsh/oh-my-zsh + starship + ghostty + heavy nvim (LSP, telescope, treesitter) + claude with tmux-integrated hooks |
-| [`vm/`](./vm/)     | **Ubuntu 22.04 in OrbStack** (Linux dev VM for Zulip — matches Zulip's recommended base) | slim claude (plan mode) + slim nvim (git-grep-driven) |
+| [`vm/`](./vm/)     | **Ubuntu 24.04 in OrbStack** (Linux dev VM for Zulip — matches Zulip's recommended base) | slim claude (plan mode) + slim nvim (git-grep-driven) |
 | [`bin/create-worktree.sh`](./bin/create-worktree.sh) | host → VM bridge | provisions an OrbStack Linux machine per worktree, ships `vm/` into it |
 
 Each subdirectory has its own `CLAUDE.md` with deploy paths and workflow notes.

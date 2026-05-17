@@ -35,7 +35,7 @@ UPSTREAM_URL="git@github.com:zulip/zulip.git"
 # amd64 under Rosetta is within ~10% of native on Apple Silicon and
 # avoids any arm64 surprises in Zulip's provision (downloaded binaries,
 # pinned wheels). Override with ORB_ARCH=arm64 if you want native.
-ORB_IMAGE="${ORB_IMAGE:-ubuntu:22.04}"
+ORB_IMAGE="${ORB_IMAGE:-ubuntu:24.04}"
 ORB_ARCH="${ORB_ARCH:-amd64}"
 
 usage() { cat <<'EOF'
