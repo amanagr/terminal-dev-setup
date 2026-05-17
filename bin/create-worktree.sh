@@ -171,22 +171,27 @@ fi
 
 
 # ---------- 7. Provision the VM ----------
-# Ship claude settings + an env file pinning EXTERNAL_HOST. Without
-# EXTERNAL_HOST, Zulip's dev_settings.py routes non-localhost hosts to the
-# marketing landing page. OrbStack's per-machine DNS name is the stable
-# address; using that means parallel worktrees don't fight over the
-# localhost:9991 port forward.
+# Ship claude settings, a slim nvim, bash aliases, and an env file pinning
+# EXTERNAL_HOST. Without EXTERNAL_HOST, Zulip's dev_settings.py routes
+# non-localhost hosts to the marketing landing page. OrbStack's per-machine
+# DNS name is the stable address; using that means parallel worktrees
+# don't fight over the localhost:9991 port forward.
 step "Provision the VM"
 ZULIP_EXTERNAL_HOST="$NAME.orb.local:9991"
 
 # orb -m runs as your Mac user inside the VM (passwordless sudo, configured
 # automatically by OrbStack). Mac files mount at the same paths inside the
-# machine, so $REPO_DIR resolves directly.
+# machine, so $REPO_DIR resolves directly. $DIR is the Mac-side path
+# (e.g. /Users/aman/work/<name>); inside the VM it resolves to the same
+# location via OrbStack's home mount — VM-native $HOME is /home/<user>,
+# which is a *different* path and does not contain the worktree.
 orb -m "$NAME" bash <<EOF
     set -euo pipefail
 
-    mkdir -p \$HOME/.claude
+    mkdir -p \$HOME/.claude \$HOME/.config/nvim \$HOME/.config/terminal-dev-setup
     install -m 0644 "$REPO_DIR/vm/claude-settings.json" \$HOME/.claude/settings.json
+    install -m 0644 "$REPO_DIR/vm/nvim/init.lua"        \$HOME/.config/nvim/init.lua
+    install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
 
     if ! command -v claude >/dev/null; then
         # Pipe rather than \`curl -o file; bash file\` — \`curl -f\` only catches
@@ -194,19 +199,61 @@ orb -m "$NAME" bash <<EOF
         curl -fsSL https://claude.ai/install.sh | bash
     fi
 
+    # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
+    # apt nvim is 0.9.5, behind the 0.9.4+ floor of which-key and others
+    # — pulling the official build also matches the host (≥ 0.12) so the
+    # same init.lua works on both. Asset name is nvim-linux-x86_64.tar.gz
+    # (renamed upstream from nvim-linux64.tar.gz in late 2024).
+    if ! command -v nvim >/dev/null 2>&1 && [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
+        tmp=\$(mktemp -d) && trap "rm -rf \$tmp" EXIT
+        curl -fsSL -o "\$tmp/nvim.tar.gz" \\
+            https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
+        sudo rm -rf /opt/nvim-linux-x86_64
+        sudo tar -C /opt -xzf "\$tmp/nvim.tar.gz"
+    fi
+
+    # gh: GitHub CLI via the official apt repo. Idempotent — apt-add is a
+    # write-the-same-file pattern, and apt-get install on an up-to-date
+    # package is a no-op. Keyring under /etc/apt/keyrings per current
+    # Debian guidance (apt-key is deprecated since Ubuntu 22.04).
+    if ! command -v gh >/dev/null 2>&1; then
+        sudo mkdir -p -m 755 /etc/apt/keyrings
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
+            | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+        sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        arch=\$(dpkg --print-architecture)
+        echo "deb [arch=\$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+            | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+        sudo apt-get update -qq
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
+    fi
+
     cat > \$HOME/.zulip-dev-env.sh <<ENV
 export EXTERNAL_HOST=$ZULIP_EXTERNAL_HOST
+export WORKTREE_DIR=$DIR
 ENV
 
-    # Source from ~/.bashrc once. Distinguish grep-not-found (1) from grep-error
-    # (2); a bare \`|| append\` would re-append on every run if ~/.bashrc became
-    # unreadable. Marker also makes re-runs idempotent.
-    mark="# managed-by: create-worktree.sh"
-    if [ -e ~/.bashrc ] && grep -Fq "\$mark" ~/.bashrc; then
-        :
-    else
-        printf "\n%s\nsource ~/.zulip-dev-env.sh\n" "\$mark" >> ~/.bashrc
+    # Rewrite the managed block between begin/end markers on every run so
+    # existing VMs pick up newly-added source lines without manual edits.
+    begin="# >>> managed-by: create-worktree.sh >>>"
+    end="# <<< managed-by: create-worktree.sh <<<"
+    touch ~/.bashrc
+    # Strip the legacy single-line marker + its source line from earlier
+    # script versions (pre-begin/end block). Safe no-op if absent.
+    sed -i.bak '/^# managed-by: create-worktree\.sh\$/,+1d' ~/.bashrc \\
+        && rm -f ~/.bashrc.bak
+    if grep -Fq "\$begin" ~/.bashrc; then
+        # sed -i with a backup suffix works on both GNU and BSD sed; we're
+        # in GNU-sed land here but the form is harmlessly portable.
+        sed -i.bak "/\$begin/,/\$end/d" ~/.bashrc && rm -f ~/.bashrc.bak
     fi
+    cat >> ~/.bashrc <<BASHRC
+
+\$begin
+source ~/.zulip-dev-env.sh
+[ -f ~/.config/terminal-dev-setup/aliases.sh ] && source ~/.config/terminal-dev-setup/aliases.sh
+\$end
+BASHRC
 EOF
 
 
@@ -219,4 +266,10 @@ First time:  cd $DIR && ./tools/provision     # ~10–20 min
 Each run:    cd $DIR && ./tools/run-dev --interface=''
              (--interface='' makes run-dev bind to all VM interfaces;
               without it, $NAME.orb.local is unreachable from the host)
+
+Shortcuts (in a fresh shell — re-source ~/.bashrc, or just \`exec bash\`):
+  zcd        cd into \$WORKTREE_DIR ($DIR)
+  run        ./tools/run-dev --interface=  (the empty-interface form above)
+  v / vi     nvim (slim init.lua at ~/.config/nvim/init.lua;
+             first launch auto-installs lazy.nvim + plugins)
 EOF
