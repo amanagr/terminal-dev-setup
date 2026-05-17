@@ -121,7 +121,7 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
     -- went wrong instead of nvim dying with an unreadable stack.
     if vim.v.shell_error ~= 0 then
         vim.api.nvim_echo({
-            { "lazy.nvim clone failed:\n", "ErrorMsg" },
+            { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
             { out, "WarningMsg" },
             { "\nPress any key to exit..." },
         }, true, {})

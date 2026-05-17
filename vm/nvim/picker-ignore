@@ -12,5 +12,6 @@
 #   <leader>fG  Live grep including ignored
 #
 # Add patterns below this line:
-# (fd already ignores VCS dirs (.git/.hg/.svn) by default — no need
-# to list .git/ explicitly; --no-ignore-vcs is the opt-out.)
+# (fd already skips .git/ by default because dotfiles are excluded; the
+# opt-out to see it again is --hidden, not --no-ignore-vcs. No need to
+# list .git/ explicitly here.)

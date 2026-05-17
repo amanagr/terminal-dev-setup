@@ -55,9 +55,15 @@ alias grbi='git rebase -i'
 alias gst='git stash'
 alias gstp='git stash pop'
 
-# Show diff for a specific commit
+# Show diff for a specific commit (delta-pipe when available; mirrors the
+# vm twin's guard so the function works on a host where delta isn't yet
+# installed instead of erroring out of the pipe).
 gshow() {
-    git show "${1:-HEAD}" | delta
+    if command -v delta >/dev/null 2>&1; then
+        git show "${1:-HEAD}" | delta
+    else
+        git show "${1:-HEAD}"
+    fi
 }
 
 # Git log with file changes
@@ -104,10 +110,11 @@ fi
 # --- Fuzzy finding (fzf) ---
 # Ctrl-T: fuzzy find files, Ctrl-R: fuzzy history
 if command -v fzf &>/dev/null; then
-    # No `2>/dev/null`: `fzf --zsh` requires fzf ≥ 0.48 — if it's
-    # missing we want the error visible so the missing Ctrl-T/Ctrl-R
+    # Process substitution per upstream README — no extra subshell eval
+    # round-trip vs `eval "$(fzf --zsh)"`. Requires fzf ≥ 0.48; if it's
+    # missing the error is visible so the missing Ctrl-T / Ctrl-R
     # bindings get diagnosed instead of silently disappearing.
-    eval "$(fzf --zsh)"
+    source <(fzf --zsh)
 
     export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
@@ -189,7 +196,10 @@ fi
 # round-trips to the tmux server.
 if [ -n "$TMUX" ]; then
     _tmux_rename_window() {
-        [[ $PWD == ${_last_rn-} ]] && return
+        # Quote the RHS so it's a literal string match, not a glob. Without
+        # the quotes, zsh treats RHS of `==` in `[[ ]]` as a pattern, so a
+        # PWD containing `*`/`?`/`[` would parse oddly or mis-match itself.
+        [[ $PWD == "${_last_rn-}" ]] && return
         tmux rename-window "${PWD:t}"
         _last_rn=$PWD
     }

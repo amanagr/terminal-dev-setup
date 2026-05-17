@@ -2301,7 +2301,12 @@ vim.lsp.config("lua_ls", {
         },
     },
 })
-vim.lsp.enable({ "pyright", "ruff", "ts_ls", "eslint", "lua_ls", "bashls", "marksman" })
+-- mason-lspconfig 2.x has automatic_enable=true by default and enables
+-- every Mason-installed server (the six pinned in ensure_installed above).
+-- ruff is the only entry that genuinely needs an explicit enable here —
+-- it's installed via Astral's standalone installer, not Mason, so the
+-- automatic path doesn't catch it.
+vim.lsp.enable("ruff")
 
 vim.api.nvim_create_autocmd("LspAttach", {
     group = vim.api.nvim_create_augroup("lsp_attach_keymaps", { clear = true }),

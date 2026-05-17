@@ -12,6 +12,10 @@
 #                              # skips dotfiles
 #   tmux-fzf-find.sh hidden    # same, but also surfaces dotfiles (--hidden)
 set -eu
+# pipefail so a failing `fd` (bad flag, unreadable cwd) surfaces an
+# error instead of feeding an empty list to `fzf` (which would just
+# show an empty picker). POSIX-allowed in dash/bash/zsh.
+set -o pipefail
 
 mode="${1:-filtered}"
 
@@ -34,6 +38,10 @@ sel=$(fd "$@" | fzf \
     --preview-window 'right,60%') || exit 0
 
 [ -n "$sel" ] || exit 0
-# `--` so a top-level filename starting with `-` (e.g. `-foo.txt` at
-# cwd root) isn't parsed as a flag by the editor.
-exec "${EDITOR:-nvim}" -- "$sel"
+# Word-split $EDITOR so values like `code --wait` / `nvim --clean` work,
+# not just bare binaries. Intentional unquoted expansion — $EDITOR is
+# user-set, so word-splitting it on IFS is the documented way to honor
+# editor wrappers. `--` then separates the editor's own flags from the
+# filename, in case the file starts with `-`.
+set -- ${EDITOR:-nvim}
+exec "$@" -- "$sel"

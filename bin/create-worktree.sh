@@ -261,7 +261,10 @@ orb -m "$NAME" bash <<EOF
     # /opt/nvim-linux-x86_64/bin under this non-interactive heredoc
     # (PATH only gets the entry from aliases.sh in an interactive shell).
     if [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
-        tmp=\$(mktemp -d) && trap "rm -rf \$tmp" EXIT
+        # Single-quoted trap body so \$tmp is re-expanded at trap-fire
+        # rather than baked in at trap-set; harmless either way today
+        # (mktemp -d output has no whitespace), defensive going forward.
+        tmp=\$(mktemp -d) && trap 'rm -rf "\$tmp"' EXIT
         curl -fsSL -o "\$tmp/nvim.tar.gz" \\
             https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
         sudo rm -rf /opt/nvim-linux-x86_64
