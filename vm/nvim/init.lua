@@ -1647,14 +1647,9 @@ require("lazy").setup({
             -- then origin/main, then origin/master — whichever exists.
             -- <leader>gd: Diffview of uncommitted changes (working tree + index vs HEAD).
             -- <leader>gD: Diffview of <base>..HEAD (commits ahead of the base branch).
-            -- <leader>gl: fugitive log of <base>..HEAD. --decorate annotates
-            --   each commit with branch tips that point at it (e.g.
-            --   "abc1234 (devenv) Commit msg") so you can see when a commit
-            --   is shared with another local branch — fugitive captures into
-            --   a buffer, so decorations are off by default and need to be
-            --   forced. <CR> on a commit = fugitive's git-show view (use
-            --   <C-o> to return). `a` on a commit = Diffview file-tree view
-            --   (q closes back to log tab).
+            -- <leader>gl: Diffview of <base>..HEAD (file tree + per-file diffs).
+            -- <leader>gL: fugitive log graph of all branches. <CR> on a commit
+            --   = git-show view (use <C-o> to return, or q closes back to log).
             { "<leader>gd", "<cmd>DiffviewOpen<CR>", desc = "Git diff (uncommitted)" },
             {
                 "<leader>gD",
@@ -2362,8 +2357,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
 -- In fugitive's git log:
 --   <CR> → :Git show <hash> in a new tab (git-show-style single buffer)
---   a    → :DiffviewOpen <hash>^! in a new tab (file tree + per-file diffs)
--- Both open new tabs so `q` / :tabc returns to the log tab with cursor preserved.
+-- Opens in a new tab so `q` / :tabc returns to the log tab with cursor preserved.
 local git_ft_group = vim.api.nvim_create_augroup("git_ft_setup", { clear = true })
 vim.api.nvim_create_autocmd("FileType", {
     group = git_ft_group,
@@ -2381,15 +2375,6 @@ vim.api.nvim_create_autocmd("FileType", {
                 vim.notify("No commit hash on this line", vim.log.levels.WARN)
             end
         end, { buffer = true, desc = "Show commit (git show) in new tab" })
-
-        vim.keymap.set("n", "a", function()
-            local hash = commit_under_cursor()
-            if hash then
-                vim.cmd("DiffviewOpen " .. hash .. "^!")
-            else
-                vim.notify("No commit hash on this line", vim.log.levels.WARN)
-            end
-        end, { buffer = true, desc = "Open commit in Diffview (file tree)" })
 
         -- `q` in a :Git show buffer closes the tab back to the log
         vim.keymap.set("n", "q", "<cmd>tabclose<CR>", { buffer = true, desc = "Close tab" })
