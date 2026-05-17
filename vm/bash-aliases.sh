@@ -6,9 +6,8 @@
 # =============================================================================
 
 # --- Editor ---
-alias v='nvim'
-alias vi='nvim'
-alias vim='nvim'
+alias v='vim'
+alias vi='vim'
 
 # --- Git shortcuts ---
 alias g='git'
@@ -87,13 +86,4 @@ zlint() {
 }
 
 # --- Paths ---
-# Neovim is installed as a tarball under /opt by create-worktree.sh
-# (Ubuntu 24.04's apt ships 0.9.5, behind some plugin requirements).
-# Combine the two prepends into a single export so the final order is
-# /opt/nvim-linux-x86_64/bin > ~/.local/bin > $PATH — without combining,
-# the second prepend reorders ~/.local/bin ahead of the nvim dir.
-if [ -d /opt/nvim-linux-x86_64/bin ]; then
-    export PATH="/opt/nvim-linux-x86_64/bin:$HOME/.local/bin:$PATH"
-else
-    export PATH="$HOME/.local/bin:$PATH"
-fi
+export PATH="$HOME/.local/bin:$PATH"

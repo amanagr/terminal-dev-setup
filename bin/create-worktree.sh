@@ -171,11 +171,11 @@ fi
 
 
 # ---------- 7. Provision the VM ----------
-# Ship claude settings, a slim nvim, bash aliases, and an env file pinning
-# EXTERNAL_HOST. Without EXTERNAL_HOST, Zulip's dev_settings.py routes
-# non-localhost hosts to the marketing landing page. OrbStack's per-machine
-# DNS name is the stable address; using that means parallel worktrees
-# don't fight over the localhost:9991 port forward.
+# Ship claude settings, bash aliases, and an env file pinning EXTERNAL_HOST.
+# Without EXTERNAL_HOST, Zulip's dev_settings.py routes non-localhost hosts
+# to the marketing landing page. OrbStack's per-machine DNS name is the
+# stable address; using that means parallel worktrees don't fight over the
+# localhost:9991 port forward.
 step "Provision the VM"
 ZULIP_EXTERNAL_HOST="$NAME.orb.local:9991"
 
@@ -188,11 +188,12 @@ ZULIP_EXTERNAL_HOST="$NAME.orb.local:9991"
 orb -m "$NAME" bash <<EOF
     set -euo pipefail
 
-    mkdir -p \$HOME/.claude \$HOME/.config/nvim \$HOME/.config/fd \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
+    mkdir -p \$HOME/.claude \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
     install -m 0644 "$REPO_DIR/vm/claude-settings.json" \$HOME/.claude/settings.json
-    install -m 0644 "$REPO_DIR/vm/nvim/init.lua"        \$HOME/.config/nvim/init.lua
-    install -m 0644 "$REPO_DIR/vm/nvim/picker-ignore"   \$HOME/.config/fd/ignore
     install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
+
+    # Default editor for git commit messages, rebases, etc.
+    git config --global core.editor vim
 
     if ! command -v claude >/dev/null; then
         # \`curl -f\` catches HTTP ≥400; the heredoc's set -o pipefail
@@ -202,88 +203,6 @@ orb -m "$NAME" bash <<EOF
         # curl errors — for a hard transactional guarantee, download
         # to a temp file and \`bash file\` it; that's overkill here.)
         curl -fsSL https://claude.ai/install.sh | bash
-    fi
-
-    # OS-level deps for the heavy nvim config (telescope-fzf-native build,
-    # ripgrep/fd for telescope pickers, sqlite for smart-open.nvim,
-    # build-essential for treesitter parser compilation, unzip for some
-    # Mason language servers). Mason itself installs the LSP servers on
-    # first nvim launch and needs node — that comes from Zulip's
-    # ./tools/provision, run after this script. apt-get install is a
-    # no-op once these are present, so the guard is just to skip the
-    # \`apt-get update\` round-trip when nothing's missing.
-    nvim_deps="build-essential ripgrep fd-find sqlite3 libsqlite3-dev unzip"
-    missing=""
-    for pkg in \$nvim_deps; do
-        # dpkg-query -W -f='\${Status}' distinguishes "install ok installed"
-        # from "deinstall ok config-files" — the latter has the .deb metadata
-        # but no binary, so a plain \`dpkg -s\` exits 0 and we'd skip the
-        # apt-get install. Edge case on a recycled VM image.
-        status=\$(dpkg-query -W -f='\${Status}' "\$pkg" 2>/dev/null || true)
-        [ "\$status" = "install ok installed" ] || missing="\$missing \$pkg"
-    done
-    if [ -n "\$missing" ]; then
-        sudo apt-get update -qq
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \$missing
-    fi
-    # Ubuntu names the fd binary \`fdfind\` (collision with the unrelated
-    # \`fd(1)\` from systemd's bacula tooling). Most nvim plugins look for
-    # \`fd\`; shim it into ~/.local/bin (already on PATH via aliases.sh).
-    if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
-        ln -sf "\$(command -v fdfind)" \$HOME/.local/bin/fd
-    fi
-
-    # ruff: installed via Astral's standalone installer (the init.lua's
-    # Mason setup notes this — Mason's pip route isn't viable on this box).
-    # The installer drops the binary at ~/.local/bin/ruff.
-    if ! command -v ruff >/dev/null 2>&1; then
-        curl -fsSL https://astral.sh/ruff/install.sh | sh
-    fi
-
-    # tree-sitter CLI: nvim-treesitter's main branch (what init.lua pins)
-    # shells out to \`tree-sitter\` to compile parsers; without it every
-    # :TSInstall fails with ENOENT. Use the zip artifact — upstream has
-    # announced the gzipped-executable artifacts are scheduled for
-    # removal in a future minor release, and the prior pipe-to-gunzip
-    # pattern would silently write garbage to ~/.local/bin/tree-sitter
-    # if the URL ever 404s. Download to a temp file first so a failed
-    # curl aborts (set -e + -f) before anything is installed.
-    # Each install block runs in a subshell so its EXIT trap is locally
-    # scoped — without that, the second install block's \`trap … EXIT\`
-    # would overwrite the first's, and the first block's temp dir would
-    # leak on every fresh-VM provision. Subshell-EXIT fires when the
-    # block ends, runs the local trap, and then control returns to the
-    # parent heredoc shell. set -euo pipefail propagates across the
-    # subshell boundary.
-    if ! command -v tree-sitter >/dev/null 2>&1; then
-        (
-            ts_tmp=\$(mktemp -d) && trap 'rm -rf "\$ts_tmp"' EXIT
-            curl -fsSL -o "\$ts_tmp/ts.zip" \\
-                https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-cli-linux-x64.zip
-            unzip -q "\$ts_tmp/ts.zip" -d "\$ts_tmp"
-            install -m 0755 "\$ts_tmp/tree-sitter" \$HOME/.local/bin/tree-sitter
-        )
-    fi
-
-    # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
-    # apt nvim is 0.9.5, behind the 0.9.4+ floor of which-key and others
-    # — pulling the official build also matches the host (≥ 0.12) so the
-    # same init.lua works on both. Asset name is nvim-linux-x86_64.tar.gz
-    # (renamed upstream from nvim-linux64.tar.gz in late 2024).
-    # Check the install path directly: \`command -v nvim\` doesn't see
-    # /opt/nvim-linux-x86_64/bin under this non-interactive heredoc
-    # (PATH only gets the entry from aliases.sh in an interactive shell).
-    if [ ! -x /opt/nvim-linux-x86_64/bin/nvim ]; then
-        (
-            # Single-quoted trap body so \$tmp is re-expanded at trap-fire
-            # rather than baked in at trap-set; harmless either way today
-            # (mktemp -d output has no whitespace), defensive going forward.
-            tmp=\$(mktemp -d) && trap 'rm -rf "\$tmp"' EXIT
-            curl -fsSL -o "\$tmp/nvim.tar.gz" \\
-                https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
-            sudo rm -rf /opt/nvim-linux-x86_64
-            sudo tar -C /opt -xzf "\$tmp/nvim.tar.gz"
-        )
     fi
 
     # gh: GitHub CLI via the official apt repo. Idempotent — apt-add is a
@@ -357,7 +276,5 @@ Each run:    cd $DIR && ./tools/run-dev --interface=''
 Shortcuts (in a fresh shell — re-source ~/.bashrc, or just \`exec bash\`):
   zcd        cd into \$WORKTREE_DIR ($DIR)
   run        ./tools/run-dev --interface=  (the empty-interface form above)
-  v / vi     nvim (heavy init.lua at ~/.config/nvim/init.lua — LSP +
-             telescope + treesitter; first launch installs lazy.nvim
-             + plugins; Mason LSP servers need node from ./tools/provision)
+  v / vi     vim (default Ubuntu vim; git core.editor is also vim)
 EOF

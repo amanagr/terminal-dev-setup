@@ -1,14 +1,13 @@
 # host/ — macOS dev configs
 
 These files configure the local Mac: tmux, zsh + oh-my-zsh, Starship,
-Ghostty, a **slim Neovim** (git-grep + oil + fugitive + gitsigns +
-which-key — enough for dotfile edits on the host itself), and Claude with
-the tmux-state-tracking hooks that drive the pulsing-dot status glyph.
+Ghostty, a **slim Neovim** (themes + lualine + handlebars syntax — kept
+around as a fallback), and Claude with the tmux-state-tracking hooks
+that drive the pulsing-dot status glyph.
 
-The heavy nvim (LSP / Mason / telescope / treesitter / blink.cmp) lives
-[in `vm/`](../vm/) and runs inside the OrbStack VM where the language
-servers see the same Python venv and `node_modules` Zulip actually runs
-against.
+Primary editor on the host is **VSCode** (with the Claude CLI in
+VSCode's integrated terminal). Real code editing happens there — not
+in this nvim config and not in the VM.
 
 Also works on modern Linux distros (PopOS, Ubuntu 24.04+) — the few
 OS-specific bits (`copy-command pbcopy`, terminal-notifier fallback chain)
@@ -83,11 +82,8 @@ Ruff. Ghostty: install the `ghostty_*_amd64_24.04.deb` from
 - `chsh -s /bin/zsh` (macOS already defaults to it; harmless to confirm).
 - Inside tmux: `prefix + I` (capital I) to fetch the plugins listed at
   the bottom of `tmux.conf`.
-- First nvim launch downloads + compiles all treesitter parsers and Mason
-  language servers; let it sit for ~30 s, then `:Lazy sync` to confirm
-  clean. Run `:checkhealth provider` to verify the clipboard and Python
-  providers — on macOS, `unnamedplus` auto-routes through `pbcopy` /
-  `pbpaste` without extra config.
+- First nvim launch installs lazy.nvim and the (small) plugin set, then
+  applies the github theme.
 
 ## Hardware quirks
 
