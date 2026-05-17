@@ -109,7 +109,8 @@ map("n", "<leader>rs", "<cmd>tab term (tools/run-dev; :)<CR>", { desc = "Run: to
 -- ]e/[e: errors only — skip past noise from linters/hints.
 -- <C-w>d is a Neovim built-in that opens the line's diagnostics in
 -- a float without moving the cursor.
-local function open_float_after_jump(d) if d then vim.diagnostic.open_float() end end
+-- on_jump receives (diagnostic, bufnr) per :h vim.diagnostic.JumpOpts.
+local function open_float_after_jump(d, _) if d then vim.diagnostic.open_float() end end
 map("n", "]d", function() vim.diagnostic.jump({ count = 1, on_jump = open_float_after_jump }) end, { desc = "Next diagnostic" })
 map("n", "[d", function() vim.diagnostic.jump({ count = -1, on_jump = open_float_after_jump }) end, { desc = "Prev diagnostic" })
 map("n", "]e", function() vim.diagnostic.jump({ count = 1, on_jump = open_float_after_jump, severity = vim.diagnostic.severity.ERROR }) end, { desc = "Next error" })
@@ -331,7 +332,10 @@ require("lazy").setup({
                 pickers = {
                     find_files = { hidden = true },
                     live_grep = {
-                        additional_args = function()
+                        -- additional_args receives the picker's opts table
+                        -- per telescope's documented signature; we don't
+                        -- use it here but accept it for fidelity.
+                        additional_args = function(_)
                             local args = { "--hidden" }
                             if vim.uv.fs_stat(picker_ignore) then
                                 table.insert(args, "--ignore-file=" .. picker_ignore)
@@ -372,7 +376,7 @@ require("lazy").setup({
             local function live_grep_all()
                 builtin.live_grep({
                     prompt_title = "Live grep (no ignore — every file)",
-                    additional_args = function() return { "--hidden", "--no-ignore" } end,
+                    additional_args = function(_) return { "--hidden", "--no-ignore" } end,
                 })
             end
             local function edit_picker_ignore()
@@ -1566,7 +1570,11 @@ require("lazy").setup({
                         hide_dotfiles = false,
                         hide_gitignored = false,
                     },
-                    follow_current_file = { enabled = true },
+                    -- leave_dirs_open=true so :Neotree reveal keeps any
+                    -- previously-expanded directories open across jumps;
+                    -- neo-tree's default closes them, which makes the tree
+                    -- thrash whenever the cursor moves between files.
+                    follow_current_file = { enabled = true, leave_dirs_open = true },
                     use_libuv_file_watcher = true,
                 },
                 window = {

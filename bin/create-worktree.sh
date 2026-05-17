@@ -240,16 +240,20 @@ orb -m "$NAME" bash <<EOF
         curl -fsSL https://astral.sh/ruff/install.sh | sh
     fi
 
-    # tree-sitter CLI: nvim-treesitter's master branch (what init.lua
-    # pins) shells out to \`tree-sitter\` to compile parsers; without it
-    # every :TSInstall fails with ENOENT. Upstream ships a prebuilt
-    # binary as a gzipped executable (not a tarball — there's nothing
-    # to extract beyond gunzip). Drop into ~/.local/bin to avoid sudo.
+    # tree-sitter CLI: nvim-treesitter's main branch (what init.lua pins)
+    # shells out to \`tree-sitter\` to compile parsers; without it every
+    # :TSInstall fails with ENOENT. Use the zip artifact — upstream has
+    # announced the gzipped-executable artifacts are scheduled for
+    # removal in a future minor release, and the prior pipe-to-gunzip
+    # pattern would silently write garbage to ~/.local/bin/tree-sitter
+    # if the URL ever 404s. Download to a temp file first so a failed
+    # curl aborts (set -e + -f) before anything is installed.
     if ! command -v tree-sitter >/dev/null 2>&1; then
-        curl -fsSL \\
-            https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz \\
-            | gunzip > \$HOME/.local/bin/tree-sitter
-        chmod +x \$HOME/.local/bin/tree-sitter
+        ts_tmp=\$(mktemp -d) && trap 'rm -rf "\$ts_tmp"' EXIT
+        curl -fsSL -o "\$ts_tmp/ts.zip" \\
+            https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-cli-linux-x64.zip
+        unzip -q "\$ts_tmp/ts.zip" -d "\$ts_tmp"
+        install -m 0755 "\$ts_tmp/tree-sitter" \$HOME/.local/bin/tree-sitter
     fi
 
     # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
@@ -287,9 +291,12 @@ orb -m "$NAME" bash <<EOF
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
     fi
 
+    # Quote the RHS so a future $DIR or $ZULIP_EXTERNAL_HOST containing
+    # spaces survives the source. The script already rejects whitespace
+    # in $NAME (line 70 regex), so this is purely defensive — but cheap.
     cat > \$HOME/.zulip-dev-env.sh <<ENV
-export EXTERNAL_HOST=$ZULIP_EXTERNAL_HOST
-export WORKTREE_DIR=$DIR
+export EXTERNAL_HOST="$ZULIP_EXTERNAL_HOST"
+export WORKTREE_DIR="$DIR"
 ENV
 
     # Rewrite the managed block between begin/end markers on every run so

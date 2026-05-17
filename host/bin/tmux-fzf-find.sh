@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Tmux popup file picker. fd lists files in the popup's cwd, fzf narrows,
 # selection opens in $EDITOR (the popup hosts the editor session, so
 # quitting the editor closes the popup — same UX as the broot popup it
@@ -7,15 +7,14 @@
 # fd auto-honors ~/.config/fd/ignore, keeping this picker consistent
 # with Neovim's smart-open / live-grep. .git/ is always excluded.
 #
+# bash, not /bin/sh — we need `set -o pipefail` (not POSIX; dash, which
+# /bin/sh resolves to on Ubuntu, rejects it with `set: Illegal option`).
+#
 # Usage:
 #   tmux-fzf-find.sh           # default — honors ignore file + .gitignore,
 #                              # skips dotfiles
 #   tmux-fzf-find.sh hidden    # same, but also surfaces dotfiles (--hidden)
-set -eu
-# pipefail so a failing `fd` (bad flag, unreadable cwd) surfaces an
-# error instead of feeding an empty list to `fzf` (which would just
-# show an empty picker). POSIX-allowed in dash/bash/zsh.
-set -o pipefail
+set -euo pipefail
 
 mode="${1:-filtered}"
 
@@ -30,7 +29,17 @@ case "$mode" in
         ;;
 esac
 
-sel=$(fd "$@" | fzf \
+# Two stages so fd errors and fzf-cancel are distinguishable. The
+# earlier single-pipeline form `fd … | fzf … || exit 0` swallowed *both*
+# (`|| exit 0` matched fzf's 130 on Esc and also matched any fd
+# failure), defeating the pipefail goal.
+if ! list=$(fd "$@"); then
+    echo "tmux-fzf-find: fd failed" >&2
+    exit 1
+fi
+# fzf exits 130 on Esc / Ctrl-C, 1 if no match. Both are "user quit, no
+# selection" — exit cleanly so the popup just closes.
+sel=$(printf '%s\n' "$list" | fzf \
     --prompt "$prompt" \
     --height 100% \
     --layout reverse \

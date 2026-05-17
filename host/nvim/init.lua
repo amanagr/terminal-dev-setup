@@ -172,7 +172,8 @@ require("lazy").setup({
         end,
     },
 
-    -- Fugitive supplies :Git, :Ggrep, :Glog. :Ggrep is the search primitive.
+    -- Fugitive supplies :Git, :Ggrep, :Gclog (the old :Glog was renamed
+    -- to :Gclog upstream years ago). :Ggrep is the search primitive.
     {
         "tpope/vim-fugitive",
         cmd = { "Git", "Ggrep", "Gdiffsplit", "Gvdiffsplit", "Gclog" },
