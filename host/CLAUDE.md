@@ -48,13 +48,15 @@ Install Homebrew first (`/bin/bash -c "$(curl -fsSL https://raw.githubuserconten
 
 ```sh
 brew install neovim starship fzf fd bat jq gh terminal-notifier ripgrep \
-             git-delta tree-sitter-cli ruff tmux
+             git-delta tree-sitter-cli sqlite ruff tmux
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 ```
 
 (`tree-sitter-cli` is the binary; the bare `tree-sitter` formula installs
 only the library, which isn't what nvim-treesitter needs for grammar
-development.)
+development. `sqlite` is needed by `smart-open.nvim` via `sqlite.lua` —
+macOS ships `libsqlite3.dylib` but nvim's sqlite.lua looks under
+`/opt/homebrew/opt/sqlite/lib/`.)
 
 Then:
 
