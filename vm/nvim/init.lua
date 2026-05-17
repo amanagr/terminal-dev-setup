@@ -1671,23 +1671,31 @@ require("lazy").setup({
                     local base = base_branch()
                     if not base then return end
                     -- Fall back to "last 30 commits" when HEAD is at the
-                    -- base (no branch commits to show) — otherwise the
-                    -- fugitive buffer is silently empty and gives the
-                    -- impression the mapping is broken.
+                    -- base (no branch commits to show) — otherwise Diffview
+                    -- opens an empty range and looks broken. Clamp to the
+                    -- repo's actual history depth so HEAD~N resolves.
                     local ahead = tonumber(vim.fn.systemlist({
                         "git", "rev-list", "--count", base .. "..HEAD",
                     })[1] or "0") or 0
                     if ahead > 0 then
-                        vim.cmd(("tab Git log %s..HEAD --oneline --decorate"):format(base))
+                        vim.cmd(("DiffviewOpen %s..HEAD"):format(base))
                     else
+                        local total = tonumber(vim.fn.systemlist({
+                            "git", "rev-list", "--count", "HEAD",
+                        })[1] or "0") or 0
+                        local n = math.min(30, math.max(total - 1, 0))
+                        if n == 0 then
+                            vim.notify("No commits to diff", vim.log.levels.WARN)
+                            return
+                        end
                         vim.notify(
-                            ("HEAD is at %s — showing last 30 commits"):format(base),
+                            ("HEAD is at %s — showing last %d commits"):format(base, n),
                             vim.log.levels.INFO
                         )
-                        vim.cmd("tab Git log -30 --oneline --decorate")
+                        vim.cmd(("DiffviewOpen HEAD~%d..HEAD"):format(n))
                     end
                 end,
-                desc = "Git log <base>..HEAD",
+                desc = "Diffview <base>..HEAD",
             },
             { "<leader>gL", "<cmd>tab Git log --oneline --all --graph -30<CR>", desc = "Git log graph (all)" },
         },
