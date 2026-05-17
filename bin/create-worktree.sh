@@ -231,6 +231,18 @@ orb -m "$NAME" bash <<EOF
         curl -fsSL https://astral.sh/ruff/install.sh | sh
     fi
 
+    # tree-sitter CLI: nvim-treesitter's master branch (what init.lua
+    # pins) shells out to \`tree-sitter\` to compile parsers; without it
+    # every :TSInstall fails with ENOENT. Upstream ships a prebuilt
+    # binary as a gzipped executable (not a tarball — there's nothing
+    # to extract beyond gunzip). Drop into ~/.local/bin to avoid sudo.
+    if ! command -v tree-sitter >/dev/null 2>&1; then
+        curl -fsSL \\
+            https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz \\
+            | gunzip > \$HOME/.local/bin/tree-sitter
+        chmod +x \$HOME/.local/bin/tree-sitter
+    fi
+
     # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
     # apt nvim is 0.9.5, behind the 0.9.4+ floor of which-key and others
     # — pulling the official build also matches the host (≥ 0.12) so the

@@ -64,6 +64,11 @@ that does **not** contain the worktree. Don't use `~/work/<name>`; either
   drops the binary at `~/.local/bin/ruff`. The init.lua's Mason setup
   intentionally skips ruff because Mason's pip route needs pip/pipx
   available; `vim.lsp.enable` picks the on-PATH binary up at runtime.
+- **tree-sitter CLI** — the `tree-sitter-linux-x64.gz` prebuilt from
+  upstream `releases/latest`, gunzipped to `~/.local/bin/tree-sitter`.
+  Required because nvim-treesitter's master branch (what `init.lua`
+  pins) compiles parsers by shelling out to `tree-sitter`; without it
+  every `:TSInstall` errors with `ENOENT: no such file or directory`.
 
 Why the tarball and not `apt install neovim`: Ubuntu 24.04 (noble) ships
 0.9.5, behind plugin requirements (e.g. blink.cmp, snacks). The upstream
