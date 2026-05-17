@@ -1685,6 +1685,110 @@ require("lazy").setup({
         config = function()
             local actions = require("diffview.actions")
 
+            -- ----------------------------------------------------------------
+            -- Bottom commit panel (toggled with <C-`>)
+            -- ----------------------------------------------------------------
+            -- A horizontal split at the bottom of the diffview tab that
+            -- shows the current commit's message *and* the same commit
+            -- list <leader>gl renders (base..HEAD --oneline --decorate),
+            -- with the cursor parked on the current commit. <CR> on
+            -- another line switches the diff view to that commit
+            -- without dismissing the panel — quick way to walk a branch
+            -- without bouncing back to the fugitive log tab.
+            local commit_panel = { win = nil, buf = nil }
+
+            local function close_commit_panel()
+                if commit_panel.win and vim.api.nvim_win_is_valid(commit_panel.win) then
+                    vim.api.nvim_win_close(commit_panel.win, true)
+                end
+                commit_panel.win, commit_panel.buf = nil, nil
+            end
+
+            local function open_commit_panel()
+                close_commit_panel()
+
+                local ok, lib = pcall(require, "diffview.lib")
+                if not ok then return end
+                local view = lib.get_current_view()
+                local commit = view and view.right and view.right.commit
+                if not commit then
+                    vim.notify("Not in a diffview commit view", vim.log.levels.WARN)
+                    return
+                end
+
+                local msg = vim.fn.systemlist({
+                    "git", "log", "-1", "--format=%h %s%n%n%b", commit,
+                })
+                local base = base_branch() or "HEAD~30"
+                local rev_range = (base and base ~= "HEAD~30") and (base .. "..HEAD") or "-30"
+                local log = vim.fn.systemlist({
+                    "git", "log", rev_range, "--oneline", "--decorate",
+                })
+
+                local sep = string.rep("─", math.max(40, vim.o.columns - 4))
+                local lines = {}
+                vim.list_extend(lines, msg)
+                table.insert(lines, "")
+                table.insert(lines, sep)
+                table.insert(lines, "Commits — <CR> opens, q closes:")
+                table.insert(lines, sep)
+                local first_log_line = #lines + 1
+                vim.list_extend(lines, log)
+
+                local buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+                vim.bo[buf].modifiable = false
+                vim.bo[buf].buftype = "nofile"
+                vim.bo[buf].bufhidden = "wipe"
+                vim.bo[buf].filetype = "git"
+
+                vim.cmd("botright split")
+                vim.cmd("resize 15")
+                local win = vim.api.nvim_get_current_win()
+                vim.api.nvim_win_set_buf(win, buf)
+                vim.wo[win].wrap = false
+                vim.wo[win].cursorline = true
+                vim.wo[win].number = false
+                vim.wo[win].relativenumber = false
+                vim.wo[win].winfixheight = true
+
+                commit_panel.win, commit_panel.buf = win, buf
+
+                -- Park the cursor on the current commit's row in the log list.
+                local short_sha = commit:sub(1, 7)
+                for i = first_log_line, #lines do
+                    if lines[i]:sub(1, #short_sha) == short_sha then
+                        vim.api.nvim_win_set_cursor(win, { i, 0 })
+                        break
+                    end
+                end
+
+                vim.keymap.set("n", "<CR>", function()
+                    local sha = vim.api.nvim_get_current_line():match("^(%x+)")
+                    if not sha or #sha < 4 then return end
+                    -- Switch the diff view to the chosen commit. Tear the
+                    -- panel down first (its window dies with DiffviewClose
+                    -- anyway), then re-create it once the new view is up.
+                    -- vim.schedule defers to the next tick so DiffviewOpen
+                    -- has finished initialising the view object lib.get_current_view
+                    -- reads from inside open_commit_panel.
+                    close_commit_panel()
+                    vim.cmd("DiffviewClose")
+                    vim.cmd("DiffviewOpen " .. sha .. "^!")
+                    vim.schedule(open_commit_panel)
+                end, { buffer = buf, nowait = true, desc = "Switch diffview to this commit" })
+
+                vim.keymap.set("n", "q", close_commit_panel, { buffer = buf, nowait = true })
+            end
+
+            local function toggle_commit_panel()
+                if commit_panel.win and vim.api.nvim_win_is_valid(commit_panel.win) then
+                    close_commit_panel()
+                else
+                    open_commit_panel()
+                end
+            end
+
             -- Floating window with the full commit message of the current
             -- diffview view. Bound to L below so it's reachable from the
             -- file panel AND the diff buffers (the virt_lines preview at
@@ -1759,6 +1863,20 @@ require("lazy").setup({
                         vim.opt_local.wrap = true
                         vim.opt_local.linebreak = true
                     end,
+                    -- Suppress the file panel's footer that reads
+                    -- `Showing changes for: <rev>` — the same information
+                    -- (and the full commit body) lives in the bottom
+                    -- commit panel under <C-`>, so the inline footer is
+                    -- redundant clutter in the narrow file column. Clear
+                    -- rev_pretty_name before render. The panel:render()
+                    -- call is wrapped in pcall because on some view types
+                    -- (eg file history) the panel struct differs.
+                    view_opened = function(view)
+                        if view and view.panel then
+                            view.panel.rev_pretty_name = nil
+                            pcall(function() view.panel:render() end)
+                        end
+                    end,
                 },
                 keymaps = {
                     view = {
@@ -1767,6 +1885,7 @@ require("lazy").setup({
                         { "n", "<Tab>",   actions.select_next_entry, { desc = "Next changed file" } },
                         { "n", "<S-Tab>", actions.select_prev_entry, { desc = "Prev changed file" } },
                         { "n", "L", show_commit_msg, { desc = "Show commit message" } },
+                        { "n", "<C-`>", toggle_commit_panel, { desc = "Toggle bottom commit panel" } },
                     },
                     file_panel = {
                         { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close diffview" } },
@@ -1774,10 +1893,12 @@ require("lazy").setup({
                         { "n", "j", actions.next_entry, { desc = "Next file" } },
                         { "n", "k", actions.prev_entry, { desc = "Prev file" } },
                         { "n", "L", show_commit_msg, { desc = "Show commit message" } },
+                        { "n", "<C-`>", toggle_commit_panel, { desc = "Toggle bottom commit panel" } },
                     },
                     file_history_panel = {
                         { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close diffview" } },
                         { "n", "L", show_commit_msg, { desc = "Show commit message" } },
+                        { "n", "<C-`>", toggle_commit_panel, { desc = "Toggle bottom commit panel" } },
                     },
                 },
             })
