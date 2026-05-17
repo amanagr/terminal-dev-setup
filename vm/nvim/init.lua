@@ -208,25 +208,6 @@ if not vim.uv.fs_stat(lazypath .. "/lua/lazy/init.lua") then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Resolve the repo's base branch for branch-relative git views
--- (<leader>gl, <leader>gd). Prefers upstream/main for forked repos.
-local function base_branch()
-    local function has_ref(ref)
-        vim.fn.system({ "git", "rev-parse", "--verify", "--quiet", ref })
-        return vim.v.shell_error == 0
-    end
-    local base = (has_ref("upstream/main") and "upstream/main")
-        or (has_ref("origin/main") and "origin/main")
-        or (has_ref("origin/master") and "origin/master")
-    if not base then
-        vim.notify(
-            "No upstream/main, origin/main, or origin/master found",
-            vim.log.levels.ERROR
-        )
-    end
-    return base
-end
-
 -- =============================================================================
 -- Plugins
 -- =============================================================================
@@ -1486,18 +1467,16 @@ require("lazy").setup({
                 open_panel({})
             end
 
-            -- True when the current tab is a diffview / fugitive view, not
-                -- a normal file-editing tab. Opening the right-side panel into
-                -- one of those tabs hijacks the diff layout, so multi_grep_cword
-                -- spawns a fresh tab first.
+            -- True when the current tab is a fugitive view, not a normal
+            -- file-editing tab. Opening the right-side panel into one of
+            -- those tabs hijacks the layout, so multi_grep_cword spawns a
+            -- fresh tab first.
             local function tab_has_special_view()
                 for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
                     local buf = vim.api.nvim_win_get_buf(win)
                     local name = vim.api.nvim_buf_get_name(buf)
                     local ft = vim.bo[buf].filetype
-                    if name:match("^diffview://")
-                        or name:match("^fugitive://")
-                        or ft:match("^Diffview")
+                    if name:match("^fugitive://")
                         or ft == "fugitive"
                         or ft == "fugitiveblame"
                         or ft == "git" then
@@ -1642,56 +1621,7 @@ require("lazy").setup({
         cmd = { "Git", "Gdiffsplit", "Gvdiffsplit", "Gclog" },
         keys = {
             { "<leader>gg", "<cmd>Git<CR>", desc = "Git status (fugitive)" },
-            -- Log / diff of commits ahead of the repo's base branch,
-            -- full-screen tab. Picks upstream/main first (forked repos),
-            -- then origin/main, then origin/master — whichever exists.
-            -- <leader>gd: Diffview of uncommitted changes (working tree + index vs HEAD).
-            -- <leader>gD: Diffview of <base>..HEAD (commits ahead of the base branch).
-            -- <leader>gl: Diffview of <base>..HEAD (file tree + per-file diffs).
-            -- <leader>gL: fugitive log graph of all branches. <CR> on a commit
-            --   = git-show view (use <C-o> to return, or q closes back to log).
-            { "<leader>gd", "<cmd>DiffviewOpen<CR>", desc = "Git diff (uncommitted)" },
-            {
-                "<leader>gD",
-                function()
-                    local base = base_branch()
-                    if not base then return end
-                    vim.cmd(("DiffviewOpen %s..HEAD"):format(base))
-                end,
-                desc = "Git diff <base>..HEAD",
-            },
-            {
-                "<leader>gl",
-                function()
-                    local base = base_branch()
-                    if not base then return end
-                    -- Fall back to "last 30 commits" when HEAD is at the
-                    -- base (no branch commits to show) — otherwise Diffview
-                    -- opens an empty range and looks broken. Clamp to the
-                    -- repo's actual history depth so HEAD~N resolves.
-                    local ahead = tonumber(vim.fn.systemlist({
-                        "git", "rev-list", "--count", base .. "..HEAD",
-                    })[1] or "0") or 0
-                    if ahead > 0 then
-                        vim.cmd(("DiffviewOpen %s..HEAD"):format(base))
-                    else
-                        local total = tonumber(vim.fn.systemlist({
-                            "git", "rev-list", "--count", "HEAD",
-                        })[1] or "0") or 0
-                        local n = math.min(30, math.max(total - 1, 0))
-                        if n == 0 then
-                            vim.notify("No commits to diff", vim.log.levels.WARN)
-                            return
-                        end
-                        vim.notify(
-                            ("HEAD is at %s — showing last %d commits"):format(base, n),
-                            vim.log.levels.INFO
-                        )
-                        vim.cmd(("DiffviewOpen HEAD~%d..HEAD"):format(n))
-                    end
-                end,
-                desc = "Diffview <base>..HEAD",
-            },
+            { "<leader>gl", "<cmd>DiffviewOpen<CR>", desc = "Diffview" },
             { "<leader>gL", "<cmd>tab Git log --oneline --all --graph -30<CR>", desc = "Git log graph (all)" },
         },
     },
@@ -1704,8 +1634,7 @@ require("lazy").setup({
 
     -- Satellite: VSCode-style scrollbar on the right edge.
     -- Shows cursor position, search matches, diagnostics, gitsigns hunks —
-    -- plus a custom handler below that marks &diff change regions, so inside
-    -- diffview you can see where all the diffs live and where you are.
+    -- plus a custom handler below that marks &diff change regions.
     {
         "lewis6991/satellite.nvim",
         lazy = false,
@@ -1714,8 +1643,7 @@ require("lazy").setup({
                 current_only = false,
                 -- The scrollbar lives in the rightmost screen column, so with
                 -- winblend=0 it fully covers any character that wraps into
-                -- that column (Diffview forces wrap → last char of every wrap
-                -- segment vanishes). 50 keeps the bar clearly visible while
+                -- that column. 50 keeps the bar clearly visible while
                 -- letting wrapped text show through underneath.
                 winblend = 50,
                 -- Skip our multi-grep panel buffers — satellite's cursor
@@ -1772,9 +1700,9 @@ require("lazy").setup({
             require("satellite.handlers").register(diff_handler)
 
             -- Satellite refreshes on BufWinEnter/WinScrolled/etc. but NOT on
-            -- DiffUpdated. When diffview swaps files, the buffer loads before
-            -- nvim has computed diff hunks, so diff_hlID returns 0 and our marks
-            -- come out empty. Trigger a refresh once the diff is ready.
+            -- DiffUpdated. When a diff buffer first loads, nvim hasn't yet
+            -- computed diff hunks, so diff_hlID returns 0 and our marks come
+            -- out empty. Trigger a refresh once the diff is ready.
             vim.api.nvim_create_autocmd("DiffUpdated", {
                 group = vim.api.nvim_create_augroup("satellite_diff_refresh", { clear = true }),
                 callback = function()
@@ -2034,26 +1962,22 @@ require("lazy").setup({
         lazy = false,
         config = function()
             require("persistence").setup()
-            -- DiffView and fugitive log/diff buffers are produced by running
-            -- git commands at view time; their contents aren't backed by a
-            -- file on disk, so :mksession only records the bufname. On
-            -- restore the windows come back empty. Wipe these buffers (and
-            -- close any DiffView tab cleanly) before save so they aren't in
-            -- the session at all — reopen with <leader>gd / :Git as needed.
+            -- Fugitive log/diff buffers are produced by running git commands
+            -- at view time; their contents aren't backed by a file on disk,
+            -- so :mksession only records the bufname. On restore the windows
+            -- come back empty. Wipe these buffers before save so they aren't
+            -- in the session at all — reopen with :Git as needed.
             -- persistence.nvim fires User PersistenceSavePre right before it
             -- runs :mksession, which is the hook point we want.
             vim.api.nvim_create_autocmd("User", {
                 pattern = "PersistenceSavePre",
                 group = vim.api.nvim_create_augroup("persistence_clean_git_bufs", { clear = true }),
                 callback = function()
-                    pcall(vim.cmd, "DiffviewClose")
                     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
                         if vim.api.nvim_buf_is_valid(buf) then
                             local name = vim.api.nvim_buf_get_name(buf)
                             local ft = vim.bo[buf].filetype
-                            if name:match("^diffview://")
-                                or name:match("^fugitive://")
-                                or ft:match("^Diffview")
+                            if name:match("^fugitive://")
                                 or ft == "fugitive"
                                 or ft == "fugitiveblame"
                                 or ft == "git" then
