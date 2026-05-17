@@ -1,9 +1,10 @@
 # vm/ — Ubuntu-in-OrbStack dev VM
 
 Files in this directory are shipped into each OrbStack Linux machine that
-`bin/create-worktree.sh` provisions. The VM runs Zulip's dev server + Claude;
-both a slim Neovim and a small bash-alias set are installed for quick
-in-VM edits and git work. Heavy editing still belongs on the host.
+`bin/create-worktree.sh` provisions. The VM runs Zulip's dev server, Claude,
+**and the full-featured Neovim** (LSP via Mason, telescope, treesitter,
+blink.cmp). This is the primary editing environment — the host's nvim is
+deliberately slim.
 
 ## Contents
 
@@ -11,6 +12,7 @@ in-VM edits and git work. Heavy editing still belongs on the host.
 | ---- | ------------------------- |
 | `claude-settings.json` | `~/.claude/settings.json` |
 | `nvim/init.lua`        | `~/.config/nvim/init.lua` |
+| `nvim/picker-ignore`   | `~/.config/fd/ignore` |
 | `bash-aliases.sh`      | `~/.config/terminal-dev-setup/aliases.sh` |
 
 The bash aliases are sourced from `~/.bashrc` (between `# >>> managed-by:
@@ -42,7 +44,7 @@ that does **not** contain the worktree. Don't use `~/work/<name>`; either
 
 ## Tools installed by the provision step
 
-`create-worktree.sh` installs these into the VM (idempotent on re-run):
+`create-worktree.sh` installs these into the VM (all idempotent on re-run):
 
 - **claude** — Anthropic CLI, via `curl … | bash` from `claude.ai/install.sh`.
 - **gh** — GitHub CLI, via the official apt repo at `cli.github.com/packages`
@@ -52,19 +54,43 @@ that does **not** contain the worktree. Don't use `~/work/<name>`; either
 - **nvim** — official Linux x86_64 tarball (`nvim-linux-x86_64.tar.gz` from
   upstream `releases/latest`), extracted to `/opt/nvim-linux-x86_64/`. The
   aliases file prepends `/opt/nvim-linux-x86_64/bin` to `PATH`.
+- **nvim deps (apt)** — `build-essential` (treesitter parsers,
+  telescope-fzf-native), `ripgrep` (telescope live_grep + multigrep),
+  `fd-find` (telescope find_files; Ubuntu names the binary `fdfind`, so
+  the script also symlinks `~/.local/bin/fd → fdfind`), `sqlite3` +
+  `libsqlite3-dev` (smart-open.nvim via sqlite.lua), `unzip` (some
+  Mason language servers).
+- **ruff** — Astral's standalone installer (`astral.sh/ruff/install.sh`)
+  drops the binary at `~/.local/bin/ruff`. The init.lua's Mason setup
+  intentionally skips ruff because Mason's pip route needs pip/pipx
+  available; `vim.lsp.enable` picks the on-PATH binary up at runtime.
 
 Why the tarball and not `apt install neovim`: Ubuntu 24.04 (noble) ships
-0.9.5, behind the 0.9.4+ floor of `which-key.nvim` and adrift from the
-host (which uses ≥ 0.12 from the same upstream). One source of nvim ⇒
-the same `init.lua` boots cleanly on both.
+0.9.5, behind plugin requirements (e.g. blink.cmp, snacks). The upstream
+build is the same one the host installs.
 
-First nvim launch auto-installs lazy.nvim and the plugin set in
-`init.lua` (github-theme, oil, gitsigns, fugitive, lualine, nvim-surround,
-nvim-autopairs, which-key). Takes ~15 seconds — no LSP / treesitter /
-telescope, so no compile step. Clipboard goes through nvim 0.10+'s
-built-in OSC52 provider, so yanks into `+` reach the Mac clipboard
-through the terminal (Ghostty supports OSC52) even though the VM has no
-xclip/wl-clipboard.
+### First-run sequence
+
+The OS-level deps above let nvim launch and most plugins work. **Mason's
+LSP servers (pyright, ts_ls, eslint, lua_ls, bashls, marksman) require
+node** — which comes from Zulip's `./tools/provision`, not this script.
+Order matters:
+
+1. `bin/create-worktree.sh <name>` (from the host) — installs nvim + deps.
+2. Inside the VM: `zcd && ./tools/provision` — Zulip provisions node,
+   python venv, postgres, etc.
+3. Inside the VM: `nvim` — first launch auto-installs lazy.nvim and the
+   plugin set, then `:MasonInstall`s the language servers in the
+   background. Treesitter parsers compile lazily as you open files in
+   each language.
+
+If you launch nvim before step 2, the editor itself works fine, but
+Mason will error on the node-based servers. Re-launch (or
+`:MasonInstall`) after provision completes.
+
+Clipboard goes through nvim 0.10+'s built-in OSC52 provider, so yanks
+into `+` reach the Mac clipboard through the terminal (Ghostty supports
+OSC52) even though the VM has no xclip/wl-clipboard.
 
 ## Aliases (highlights)
 
@@ -87,8 +113,8 @@ After editing anything in `vm/`:
 1. **Edit and commit** as usual on the host.
 2. **Re-run `bin/create-worktree.sh <name>`** for each existing VM (no
    `--rebuild` needed — the provision step is idempotent and re-copies
-   `claude-settings.json`, `init.lua`, `bash-aliases.sh`, and rewrites
-   the managed `~/.bashrc` block). For a hard reset, use
+   `claude-settings.json`, `init.lua`, `picker-ignore`, `bash-aliases.sh`,
+   and rewrites the managed `~/.bashrc` block). For a hard reset, use
    `bin/create-worktree.sh --rebuild <name>`.
 
 OrbStack auto-mounts your Mac filesystem (including `$HOME`) into the VM
@@ -101,13 +127,19 @@ orb -m <name> cp /Users/$USER/terminal-dev-setup/vm/claude-settings.json ~/.clau
 (`$USER` expands on the Mac — by default OrbStack provisions the VM with
 the same username, so the path resolves correctly on both sides.)
 
-## Why slim
+## Why the heavy nvim lives here (not on the host)
 
-The VM is short-lived (one per Zulip branch / experiment). Heavyweight
-nvim plugins (LSP, telescope, treesitter) take minutes to install on
-first launch — a cost you'd pay every time you spin up a new worktree.
-The slim `nvim/init.lua` uses `:Ggrep` (fugitive) for code navigation;
-that's enough for quick edits inside the VM.
+The host is a launchpad: tmux, ghostty, browsers, attach to VMs. Actual
+code reading/editing happens inside the VM where the source tree, venv,
+node_modules, and language servers all match each other and Zulip's
+runtime. Putting the full LSP + telescope + treesitter stack VM-side
+means the language servers see the same Python interpreter and
+node_modules Zulip actually runs against — no cross-machine path
+mismatches, no host needing to know about per-worktree Python venvs.
+
+The host's `nvim/init.lua` is intentionally slim (git-grep + oil +
+fugitive + gitsigns + which-key) — enough for quick edits to dotfiles
+on the Mac itself.
 
 Claude runs in plan mode by default in the VM so multi-step changes
 get an explicit approval gate before they touch the dev tree. No

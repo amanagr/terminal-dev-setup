@@ -188,15 +188,47 @@ ZULIP_EXTERNAL_HOST="$NAME.orb.local:9991"
 orb -m "$NAME" bash <<EOF
     set -euo pipefail
 
-    mkdir -p \$HOME/.claude \$HOME/.config/nvim \$HOME/.config/terminal-dev-setup
+    mkdir -p \$HOME/.claude \$HOME/.config/nvim \$HOME/.config/fd \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
     install -m 0644 "$REPO_DIR/vm/claude-settings.json" \$HOME/.claude/settings.json
     install -m 0644 "$REPO_DIR/vm/nvim/init.lua"        \$HOME/.config/nvim/init.lua
+    install -m 0644 "$REPO_DIR/vm/nvim/picker-ignore"   \$HOME/.config/fd/ignore
     install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
 
     if ! command -v claude >/dev/null; then
         # Pipe rather than \`curl -o file; bash file\` — \`curl -f\` only catches
         # HTTP ≥400, not mid-transfer truncation. Piping + pipefail does.
         curl -fsSL https://claude.ai/install.sh | bash
+    fi
+
+    # OS-level deps for the heavy nvim config (telescope-fzf-native build,
+    # ripgrep/fd for telescope pickers, sqlite for smart-open.nvim,
+    # build-essential for treesitter parser compilation, unzip for some
+    # Mason language servers). Mason itself installs the LSP servers on
+    # first nvim launch and needs node — that comes from Zulip's
+    # ./tools/provision, run after this script. apt-get install is a
+    # no-op once these are present, so the guard is just to skip the
+    # \`apt-get update\` round-trip when nothing's missing.
+    nvim_deps="build-essential ripgrep fd-find sqlite3 libsqlite3-dev unzip"
+    missing=""
+    for pkg in \$nvim_deps; do
+        dpkg -s "\$pkg" >/dev/null 2>&1 || missing="\$missing \$pkg"
+    done
+    if [ -n "\$missing" ]; then
+        sudo apt-get update -qq
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \$missing
+    fi
+    # Ubuntu names the fd binary \`fdfind\` (collision with the unrelated
+    # \`fd(1)\` from systemd's bacula tooling). Most nvim plugins look for
+    # \`fd\`; shim it into ~/.local/bin (already on PATH via aliases.sh).
+    if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
+        ln -sf "\$(command -v fdfind)" \$HOME/.local/bin/fd
+    fi
+
+    # ruff: installed via Astral's standalone installer (the init.lua's
+    # Mason setup notes this — Mason's pip route isn't viable on this box).
+    # The installer drops the binary at ~/.local/bin/ruff.
+    if ! command -v ruff >/dev/null 2>&1; then
+        curl -fsSL https://astral.sh/ruff/install.sh | sh
     fi
 
     # Neovim: install latest stable tarball under /opt. Ubuntu 24.04's
@@ -270,6 +302,7 @@ Each run:    cd $DIR && ./tools/run-dev --interface=''
 Shortcuts (in a fresh shell — re-source ~/.bashrc, or just \`exec bash\`):
   zcd        cd into \$WORKTREE_DIR ($DIR)
   run        ./tools/run-dev --interface=  (the empty-interface form above)
-  v / vi     nvim (slim init.lua at ~/.config/nvim/init.lua;
-             first launch auto-installs lazy.nvim + plugins)
+  v / vi     nvim (heavy init.lua at ~/.config/nvim/init.lua — LSP +
+             telescope + treesitter; first launch installs lazy.nvim
+             + plugins; Mason LSP servers need node from ./tools/provision)
 EOF

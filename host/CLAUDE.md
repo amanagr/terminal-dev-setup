@@ -1,8 +1,14 @@
 # host/ — macOS dev configs
 
 These files configure the local Mac: tmux, zsh + oh-my-zsh, Starship,
-Ghostty, full Neovim (LSP / telescope / treesitter), and Claude with the
-tmux-state-tracking hooks that drive the pulsing-dot status glyph.
+Ghostty, a **slim Neovim** (git-grep + oil + fugitive + gitsigns +
+which-key — enough for dotfile edits on the host itself), and Claude with
+the tmux-state-tracking hooks that drive the pulsing-dot status glyph.
+
+The heavy nvim (LSP / Mason / telescope / treesitter / blink.cmp) lives
+[in `vm/`](../vm/) and runs inside the OrbStack VM where the language
+servers see the same Python venv and `node_modules` Zulip actually runs
+against.
 
 Also works on modern Linux distros (PopOS, Ubuntu 24.04+) — the few
 OS-specific bits (`copy-command pbcopy`, terminal-notifier fallback chain)
@@ -16,7 +22,6 @@ are guarded.
 | `starship.toml` | `~/.config/starship.toml` |
 | `zsh-aliases.zsh` | `~/.config/terminal-dev-setup/aliases.zsh` |
 | `nvim/init.lua` | `~/.config/nvim/init.lua` |
-| `nvim/picker-ignore` | `~/.config/fd/ignore` |
 | `ghostty/config` | `~/.config/ghostty/config` |
 | `claude-settings.json` | `~/.claude/settings.json` |
 | `bin/claude-tmux-state.sh` | `~/.local/bin/claude-tmux-state.sh` *(chmod +x)* |
@@ -48,15 +53,15 @@ Install Homebrew first (`/bin/bash -c "$(curl -fsSL https://raw.githubuserconten
 
 ```sh
 brew install neovim starship fzf fd bat jq gh terminal-notifier ripgrep \
-             git-delta tree-sitter-cli sqlite ruff tmux
+             git-delta tmux
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 ```
 
-(`tree-sitter-cli` is the binary; the bare `tree-sitter` formula installs
-only the library, which isn't what nvim-treesitter needs for grammar
-development. `sqlite` is needed by `smart-open.nvim` via `sqlite.lua` —
-macOS ships `libsqlite3.dylib` but nvim's sqlite.lua looks under
-`/opt/homebrew/opt/sqlite/lib/`.)
+(`fzf`, `fd`, `ripgrep`, `bat` aren't strictly nvim deps anymore — the
+host nvim is slim — but `zsh-aliases.zsh` uses them for the `fe` / `fcd`
+/ `frg` fuzzy helpers, so keep them. `tree-sitter-cli`, `sqlite` and
+`ruff` are no longer needed on the host; they live in the VM provision
+now, see [`../vm/CLAUDE.md`](../vm/CLAUDE.md).)
 
 Then:
 
