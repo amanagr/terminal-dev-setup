@@ -1714,6 +1714,69 @@ require("lazy").setup({
             -- a branch without bouncing back to the fugitive log tab.
 
             local commit_panel = { msg_win = nil, msg_buf = nil, log_win = nil, log_buf = nil }
+            -- Tracks the timestamp the log window was last entered, so a
+            -- <LeftRelease> within ~250ms is treated as the focusing
+            -- click (absorbed) and only subsequent clicks switch commits.
+            local log_focus_at = 0
+            -- Highlight namespace + group setup for the message buffer.
+            -- Defined as a closure rather than top-level so the highlight
+            -- groups can be (re-)defined alongside the diffview config.
+            local commit_msg_ns = vim.api.nvim_create_namespace("commit_panel_msg_hl")
+            -- Define a couple of palette-linked groups once. Inherit
+            -- from the GitHub-dark palette already in use elsewhere in
+            -- the config; falling back to plain Identifier/Keyword if
+            -- the theme hasn't loaded yet.
+            vim.api.nvim_set_hl(0, "CommitPanelHash",    { link = "DiffviewHash",  default = true })
+            vim.api.nvim_set_hl(0, "CommitPanelSubject", { fg = "#d2a8ff", bold = true, default = true })
+            vim.api.nvim_set_hl(0, "CommitPanelTrailer", { fg = "#7ee787", italic = true, default = true })
+            vim.api.nvim_set_hl(0, "CommitPanelTrailerValue", { fg = "#8b949e", default = true })
+            vim.api.nvim_set_hl(0, "CommitPanelRef",     { fg = "#79c0ff", default = true })
+
+            local function highlight_commit_msg(buf, lines)
+                vim.api.nvim_buf_clear_namespace(buf, commit_msg_ns, 0, -1)
+                -- Line 1: "<hash> <subject>" — colour hash + subject distinctly.
+                if lines[1] then
+                    local space = lines[1]:find(" ", 1, true)
+                    if space then
+                        vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, 0, 0, {
+                            end_col = space - 1, hl_group = "CommitPanelHash",
+                        })
+                        vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, 0, space, {
+                            end_col = #lines[1], hl_group = "CommitPanelSubject",
+                        })
+                    end
+                end
+                for i = 2, #lines do
+                    local line = lines[i]
+                    -- Trailer line: `Key-With-Dashes: value` at the start
+                    -- of a line. Common values: Co-Authored-By,
+                    -- Signed-off-by, Fixes, Closes, Reviewed-by.
+                    local key, val_start = line:match("^([%w-]+):()%s")
+                    if key and #key >= 3 then
+                        vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, i - 1, 0, {
+                            end_col = val_start - 1,
+                            hl_group = "CommitPanelTrailer",
+                        })
+                        vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, i - 1, val_start, {
+                            end_col = #line,
+                            hl_group = "CommitPanelTrailerValue",
+                        })
+                    end
+                    -- Inline refs: #1234 (issue/PR), short hashes, GH-123.
+                    for s, e in line:gmatch("()#%d+()") do
+                        vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, i - 1, s - 1, {
+                            end_col = e - 1, hl_group = "CommitPanelRef",
+                        })
+                    end
+                    for s, sha, e in line:gmatch("()(%x%x%x%x%x%x%x+)()") do
+                        if #sha >= 7 and #sha <= 12 then
+                            vim.api.nvim_buf_set_extmark(buf, commit_msg_ns, i - 1, s - 1, {
+                                end_col = e - 1, hl_group = "CommitPanelHash",
+                            })
+                        end
+                    end
+                end
+            end
 
             -- Forward-declare so the panel's <C-`> keymap can reference
             -- toggle_commit_panel without a chicken-and-egg upvalue
@@ -1771,6 +1834,7 @@ require("lazy").setup({
                 vim.bo[msg_buf].buftype = "nofile"
                 vim.bo[msg_buf].bufhidden = "wipe"
                 vim.bo[msg_buf].filetype = "gitcommit"
+                highlight_commit_msg(msg_buf, msg)
 
                 local log_buf = vim.api.nvim_create_buf(false, true)
                 vim.api.nvim_buf_set_lines(log_buf, 0, -1, false, log)
@@ -1815,11 +1879,12 @@ require("lazy").setup({
                     end
                 end
 
-                vim.keymap.set("n", "<CR>", function()
+                -- Shared "switch to commit under cursor" action used by
+                -- both <CR> and <LeftRelease>.
+                local function switch_to_cursor_commit()
                     local sha = vim.api.nvim_get_current_line():match("^(%x+)")
                     if not sha or #sha < 4 then return end
-                    -- Switch the diff view to the chosen commit. Tear
-                    -- the panel down first (its windows die with
+                    -- Tear the panel down first (its windows die with
                     -- DiffviewClose anyway), reopen the view, then
                     -- recreate the panel on the next tick so
                     -- lib.get_current_view sees the new view object.
@@ -1827,7 +1892,30 @@ require("lazy").setup({
                     vim.cmd("DiffviewClose")
                     vim.cmd("DiffviewOpen " .. sha .. "^!")
                     vim.schedule(open_commit_panel)
-                end, { buffer = log_buf, nowait = true, desc = "Switch diffview to this commit" })
+                end
+
+                vim.keymap.set("n", "<CR>", switch_to_cursor_commit,
+                    { buffer = log_buf, nowait = true, desc = "Switch diffview to this commit" })
+
+                -- Click as Enter, but only when the log pane is already
+                -- focused. The first click into the pane from another
+                -- window also shifts focus, and we don't want that
+                -- focus-shifting click to immediately swap commits.
+                -- Track the time of the most recent WinEnter on the log
+                -- buffer and absorb any <LeftRelease> within 250ms.
+                vim.api.nvim_create_autocmd("WinEnter", {
+                    buffer = log_buf,
+                    callback = function() log_focus_at = vim.uv.now() end,
+                })
+                -- Seed the focus timestamp now — the vsplit above just
+                -- moved focus into log_win without firing WinEnter for
+                -- this buffer (autocmd registered post-fact), so the
+                -- very first click after opening would otherwise fire.
+                log_focus_at = vim.uv.now()
+                vim.keymap.set("n", "<LeftRelease>", function()
+                    if vim.uv.now() - log_focus_at < 250 then return end
+                    switch_to_cursor_commit()
+                end, { buffer = log_buf, nowait = true, desc = "Switch diffview to clicked commit" })
 
                 -- <C-`> and q both close from either pane.
                 for _, b in ipairs({ msg_buf, log_buf }) do
@@ -1845,9 +1933,10 @@ require("lazy").setup({
             end
 
             -- Floating window with the full commit message of the current
-            -- diffview view. Bound to L below so it's reachable from the
-            -- file panel AND the diff buffers (the virt_lines preview at
-            -- the top of the file panel only shows when that pane is focused).
+            -- diffview view. Bound to L below so it's reachable from any
+            -- diffview window for a one-shot peek at the message; the
+            -- toggleable bottom panel under <C-`> covers the same info
+            -- plus a commit picker if you need to walk the branch.
             local function show_commit_msg()
                 local ok, lib = pcall(require, "diffview.lib")
                 if not ok then return end
@@ -2588,41 +2677,11 @@ vim.api.nvim_create_autocmd("FileType", {
     end,
 })
 
--- Show the commit message at the top of Diffview's file panel.
--- Runs whenever a DiffviewFiles buffer is set up. Pulls the active view
--- from diffview's lib and reads the commit SHA off view.right.
-local diffview_commit_ns = vim.api.nvim_create_namespace("diffview_commit_msg")
-vim.api.nvim_create_autocmd("FileType", {
-    group = vim.api.nvim_create_augroup("diffview_commit_header", { clear = true }),
-    pattern = "DiffviewFiles",
-    callback = function(args)
-        vim.schedule(function()
-            if not vim.api.nvim_buf_is_valid(args.buf) then return end
-            local ok, lib = pcall(require, "diffview.lib")
-            if not ok then return end
-            local view = lib.get_current_view()
-            local commit = view and view.right and view.right.commit
-            if not commit then return end
-
-            local out = vim.fn.systemlist({
-                "git", "log", "-1", "--format=%h %s%n%n%b", commit,
-            })
-            if vim.v.shell_error ~= 0 or #out == 0 then return end
-
-            local virt_lines = {}
-            for _, line in ipairs(out) do
-                virt_lines[#virt_lines + 1] = { { line, "Comment" } }
-            end
-            virt_lines[#virt_lines + 1] = { { "", "Comment" } }
-
-            vim.api.nvim_buf_clear_namespace(args.buf, diffview_commit_ns, 0, -1)
-            vim.api.nvim_buf_set_extmark(args.buf, diffview_commit_ns, 0, 0, {
-                virt_lines = virt_lines,
-                virt_lines_above = true,
-            })
-        end)
-    end,
-})
+-- (Removed: the autocmd that injected the commit message as virt_lines
+-- above the DiffviewFiles file panel. The Ctrl+` bottom commit panel
+-- shows the same info in a readable, focusable buffer, so duplicating
+-- it as un-scrollable virtual lines on top of the narrow 25-col file
+-- column is just clutter.)
 
 -- =============================================================================
 -- Terminal buffer naming
