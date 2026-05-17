@@ -1703,23 +1703,34 @@ require("lazy").setup({
             -- ----------------------------------------------------------------
             -- Bottom commit panel (toggled with <C-`>)
             -- ----------------------------------------------------------------
-            -- A horizontal split at the bottom of the diffview tab that
-            -- shows the current commit's message *and* the same commit
-            -- list <leader>gl renders (base..HEAD --oneline --decorate),
-            -- with the cursor parked on the current commit. <CR> on
-            -- another line switches the diff view to that commit
-            -- without dismissing the panel — quick way to walk a branch
-            -- without bouncing back to the fugitive log tab.
-            local commit_panel = { win = nil, buf = nil }
+            -- A horizontal split at the bottom of the diffview tab,
+            -- itself split vertically:
+            --   left  → full commit message of the current diff
+            --   right → same commit list <leader>gl renders, cursor
+            --           parked on the current commit
+            -- <CR> on a different commit row switches the diff view to
+            -- that commit and re-opens the panel for it. <C-`> or q in
+            -- either pane dismisses the whole panel — quick way to walk
+            -- a branch without bouncing back to the fugitive log tab.
 
-            local function close_commit_panel()
-                if commit_panel.win and vim.api.nvim_win_is_valid(commit_panel.win) then
-                    vim.api.nvim_win_close(commit_panel.win, true)
+            local commit_panel = { msg_win = nil, msg_buf = nil, log_win = nil, log_buf = nil }
+
+            -- Forward-declare so the panel's <C-`> keymap can reference
+            -- toggle_commit_panel without a chicken-and-egg upvalue
+            -- problem at function-creation time.
+            local close_commit_panel, open_commit_panel, toggle_commit_panel
+
+            close_commit_panel = function()
+                for _, w in ipairs({ commit_panel.log_win, commit_panel.msg_win }) do
+                    if w and vim.api.nvim_win_is_valid(w) then
+                        vim.api.nvim_win_close(w, true)
+                    end
                 end
-                commit_panel.win, commit_panel.buf = nil, nil
+                commit_panel.msg_win, commit_panel.msg_buf = nil, nil
+                commit_panel.log_win, commit_panel.log_buf = nil, nil
             end
 
-            local function open_commit_panel()
+            open_commit_panel = function()
                 close_commit_panel()
 
                 local ok, lib = pcall(require, "diffview.lib")
@@ -1754,40 +1765,52 @@ require("lazy").setup({
                 end
                 local log = vim.fn.systemlist(log_args)
 
-                local sep = string.rep("─", math.max(40, vim.o.columns - 4))
-                local lines = {}
-                vim.list_extend(lines, msg)
-                table.insert(lines, "")
-                table.insert(lines, sep)
-                table.insert(lines, "Commits — <CR> opens, q closes:")
-                table.insert(lines, sep)
-                local first_log_line = #lines + 1
-                vim.list_extend(lines, log)
+                local msg_buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_lines(msg_buf, 0, -1, false, msg)
+                vim.bo[msg_buf].modifiable = false
+                vim.bo[msg_buf].buftype = "nofile"
+                vim.bo[msg_buf].bufhidden = "wipe"
+                vim.bo[msg_buf].filetype = "gitcommit"
 
-                local buf = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-                vim.bo[buf].modifiable = false
-                vim.bo[buf].buftype = "nofile"
-                vim.bo[buf].bufhidden = "wipe"
-                vim.bo[buf].filetype = "git"
+                local log_buf = vim.api.nvim_create_buf(false, true)
+                vim.api.nvim_buf_set_lines(log_buf, 0, -1, false, log)
+                vim.bo[log_buf].modifiable = false
+                vim.bo[log_buf].buftype = "nofile"
+                vim.bo[log_buf].bufhidden = "wipe"
+                vim.bo[log_buf].filetype = "git"
 
+                -- Layout: botright split (15 rows tall) → vsplit → left
+                -- pane holds the message, right pane holds the log.
+                -- `winfixheight` keeps the panel from being resized when
+                -- diffview re-renders its file/diff windows.
                 vim.cmd("botright split")
                 vim.cmd("resize 15")
-                local win = vim.api.nvim_get_current_win()
-                vim.api.nvim_win_set_buf(win, buf)
-                vim.wo[win].wrap = false
-                vim.wo[win].cursorline = true
-                vim.wo[win].number = false
-                vim.wo[win].relativenumber = false
-                vim.wo[win].winfixheight = true
+                local msg_win = vim.api.nvim_get_current_win()
+                vim.api.nvim_win_set_buf(msg_win, msg_buf)
 
-                commit_panel.win, commit_panel.buf = win, buf
+                vim.cmd("vsplit")
+                local log_win = vim.api.nvim_get_current_win()
+                vim.api.nvim_win_set_buf(log_win, log_buf)
 
-                -- Park the cursor on the current commit's row in the log list.
+                for _, w in ipairs({ msg_win, log_win }) do
+                    vim.wo[w].number = false
+                    vim.wo[w].relativenumber = false
+                    vim.wo[w].winfixheight = true
+                end
+                vim.wo[msg_win].wrap = true
+                vim.wo[msg_win].linebreak = true
+                vim.wo[log_win].wrap = false
+                vim.wo[log_win].cursorline = true
+
+                commit_panel.msg_win, commit_panel.msg_buf = msg_win, msg_buf
+                commit_panel.log_win, commit_panel.log_buf = log_win, log_buf
+
+                -- Park the cursor on the current commit in the log list
+                -- and leave focus there so the user can immediately j/k.
                 local short_sha = commit:sub(1, 7)
-                for i = first_log_line, #lines do
-                    if lines[i]:sub(1, #short_sha) == short_sha then
-                        vim.api.nvim_win_set_cursor(win, { i, 0 })
+                for i, line in ipairs(log) do
+                    if line:sub(1, #short_sha) == short_sha then
+                        vim.api.nvim_win_set_cursor(log_win, { i, 0 })
                         break
                     end
                 end
@@ -1795,23 +1818,26 @@ require("lazy").setup({
                 vim.keymap.set("n", "<CR>", function()
                     local sha = vim.api.nvim_get_current_line():match("^(%x+)")
                     if not sha or #sha < 4 then return end
-                    -- Switch the diff view to the chosen commit. Tear the
-                    -- panel down first (its window dies with DiffviewClose
-                    -- anyway), then re-create it once the new view is up.
-                    -- vim.schedule defers to the next tick so DiffviewOpen
-                    -- has finished initialising the view object lib.get_current_view
-                    -- reads from inside open_commit_panel.
+                    -- Switch the diff view to the chosen commit. Tear
+                    -- the panel down first (its windows die with
+                    -- DiffviewClose anyway), reopen the view, then
+                    -- recreate the panel on the next tick so
+                    -- lib.get_current_view sees the new view object.
                     close_commit_panel()
                     vim.cmd("DiffviewClose")
                     vim.cmd("DiffviewOpen " .. sha .. "^!")
                     vim.schedule(open_commit_panel)
-                end, { buffer = buf, nowait = true, desc = "Switch diffview to this commit" })
+                end, { buffer = log_buf, nowait = true, desc = "Switch diffview to this commit" })
 
-                vim.keymap.set("n", "q", close_commit_panel, { buffer = buf, nowait = true })
+                -- <C-`> and q both close from either pane.
+                for _, b in ipairs({ msg_buf, log_buf }) do
+                    vim.keymap.set("n", "<C-`>", close_commit_panel, { buffer = b, nowait = true, desc = "Close commit panel" })
+                    vim.keymap.set("n", "q",     close_commit_panel, { buffer = b, nowait = true, desc = "Close commit panel" })
+                end
             end
 
-            local function toggle_commit_panel()
-                if commit_panel.win and vim.api.nvim_win_is_valid(commit_panel.win) then
+            toggle_commit_panel = function()
+                if commit_panel.log_win and vim.api.nvim_win_is_valid(commit_panel.log_win) then
                     close_commit_panel()
                 else
                     open_commit_panel()
