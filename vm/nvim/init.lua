@@ -1700,105 +1700,6 @@ require("lazy").setup({
     {
         "sindrets/diffview.nvim",
         cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewFileHistory", "DiffviewToggleFiles" },
-        config = function()
-            local actions = require("diffview.actions")
-
-            -- Floating window with the full commit message of the current
-            -- diffview view. Bound to L below so it's reachable from any
-            -- diffview window for a one-shot peek at the message.
-            local function show_commit_msg()
-                local ok, lib = pcall(require, "diffview.lib")
-                if not ok then return end
-                local view = lib.get_current_view()
-                local commit = view and view.right and view.right.commit
-                if not commit then
-                    vim.notify("No commit info for this view", vim.log.levels.WARN)
-                    return
-                end
-                local out = vim.fn.systemlist({
-                    "git", "log", "-1", "--format=%h %s%n%n%b", commit,
-                })
-                if vim.v.shell_error ~= 0 or #out == 0 then return end
-
-                local buf = vim.api.nvim_create_buf(false, true)
-                vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
-                vim.bo[buf].modifiable = false
-                vim.bo[buf].bufhidden = "wipe"
-                vim.bo[buf].filetype = "gitcommit"
-
-                local width  = math.min(80, vim.o.columns - 4)
-                local height = math.min(#out, vim.o.lines - 6)
-                vim.api.nvim_open_win(buf, true, {
-                    relative  = "editor",
-                    row       = math.floor((vim.o.lines  - height) / 2),
-                    col       = math.floor((vim.o.columns - width)  / 2),
-                    width     = width,
-                    height    = height,
-                    style     = "minimal",
-                    border    = "rounded",
-                    title     = " Commit message ",
-                    title_pos = "center",
-                })
-                vim.keymap.set("n", "q",     "<cmd>close<CR>", { buffer = buf, nowait = true })
-                vim.keymap.set("n", "<Esc>", "<cmd>close<CR>", { buffer = buf, nowait = true })
-            end
-
-            require("diffview").setup({
-                -- Show deletions as red on the left pane and dim filler (~)
-                -- with no colored bg on the right, instead of vimdiff's default
-                -- of green-on-left + red-filler-on-right, which inverts what
-                -- "this line was removed" intuitively reads as. Diffview wires
-                -- this by remapping DiffAdd→DiffviewDiffAddAsDelete (uses
-                -- DiffDelete's red bg) on the left and DiffDelete→
-                -- DiffviewDiffDeleteDim (linked to Comment, fg-only) on both
-                -- panes' filler lines.
-                enhanced_diff_hl = true,
-                -- corporate/tests/stripe_fixtures/*.json has `-diff` set in
-                -- .gitattributes (so `git diff` prints "Binary files differ"),
-                -- which makes Diffview skip loading the file contents and show
-                -- an empty diff buffer. Forcing diff_binaries=true bypasses the
-                -- is_binary check; Diffview loads both revs as text and runs
-                -- nvim's diff over them.
-                diff_binaries = true,
-                file_panel = {
-                    listing_style = "tree",
-                    tree_options = { flatten_dirs = true, folder_statuses = "only_folded" },
-                    -- Narrower panel (was 35). File list is ~30% slimmer.
-                    win_config = { position = "left", width = 25 },
-                },
-                hooks = {
-                    -- Long minified-JSON / one-line markdown diffs scroll
-                    -- horizontally off-screen by default. Wrap inside diff
-                    -- buffers so the whole change stays visible. wrap is
-                    -- window-local, so opt_local set inside the win_enter
-                    -- hook applies only to diffview's windows.
-                    diff_buf_win_enter = function()
-                        vim.opt_local.wrap = true
-                        vim.opt_local.linebreak = true
-                    end,
-                },
-                keymaps = {
-                    view = {
-                        { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close diffview" } },
-                        -- j/k in the diff windows navigates between files in the panel
-                        { "n", "<Tab>",   actions.select_next_entry, { desc = "Next changed file" } },
-                        { "n", "<S-Tab>", actions.select_prev_entry, { desc = "Prev changed file" } },
-                        { "n", "L", show_commit_msg, { desc = "Show commit message" } },
-                    },
-                    file_panel = {
-                        { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close diffview" } },
-                        { "n", "<CR>", actions.select_entry, { desc = "Open file diff" } },
-                        { "n", "j", actions.next_entry, { desc = "Next file" } },
-                        { "n", "k", actions.prev_entry, { desc = "Prev file" } },
-                        { "n", "L", show_commit_msg, { desc = "Show commit message" } },
-                    },
-                    file_history_panel = {
-                        { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close diffview" } },
-                        { "n", "L", show_commit_msg, { desc = "Show commit message" } },
-                    },
-                },
-            })
-        end,
     },
 
     -- Satellite: VSCode-style scrollbar on the right edge.
@@ -2504,44 +2405,18 @@ require("github-theme").setup({
 vim.cmd.colorscheme "github_dark"
 
 -- Subtle diff backgrounds. github_dark's Added/Removed/Changed set a guifg
--- which clobbers syntax tokens inside diff regions, so DiffView shows code as
--- flat green/red. Override the upstream Added/Removed/Changed groups (the
--- chain is DiffAdd → diffAdded → Added) so DiffAdd/DiffDelete/DiffChange keep
--- their links — diffview's setup derives DiffviewDiffAddAsDelete from those
--- links, and replacing DiffAdd with a direct hl breaks that derivation and
--- can paint the entire left pane red. Drop fg, dial bg down.
+-- which clobbers syntax tokens inside diff regions. Drop fg, dial bg down.
 local function set_subtle_diff_hl()
     vim.api.nvim_set_hl(0, "Added",   { bg = "#19321f" })
     vim.api.nvim_set_hl(0, "Removed", { bg = "#3a1d22" })
     vim.api.nvim_set_hl(0, "Changed", { bg = "#2a2616" })
-    -- DiffText is the within-line "this character range changed" emphasis on
-    -- top of DiffChange. github_dark sets it directly with both bg AND fg
-    -- (#363C44 / #e6edf3) — and unlike DiffAdd/DiffDelete/DiffChange it isn't
-    -- routed through the Added/Removed/Changed link chain, so the Changed
-    -- override above doesn't reach it. The forced fg flattens syntax tokens
-    -- inside the changed range. Re-set bg only (slightly brighter yellow than
-    -- Changed so the emphasis still pops) and clear fg so treesitter wins.
+    -- DiffText (within-line emphasis) isn't routed through Added/Removed/
+    -- Changed, so the override above doesn't reach it. Re-set bg only and
+    -- clear fg so treesitter wins.
     vim.api.nvim_set_hl(0, "DiffText", { bg = "#4a3a18" })
-    -- DiffviewDiffAddAsDelete is what enhanced_diff_hl maps the left pane's
-    -- "DiffAdd" (= removed lines) to. Diffview computes it via get_bg(
-    -- "DiffDelete", no_trans=true) which doesn't follow link chains, so since
-    -- DiffDelete → diffRemoved → Removed (link only, no direct bg), diffview
-    -- ends up with bg=NONE and the left pane has no red. Set it explicitly to
-    -- the same red as Removed so deletions read correctly.
-    vim.api.nvim_set_hl(0, "DiffviewDiffAddAsDelete", { bg = "#3a1d22" })
 end
 set_subtle_diff_hl()
 vim.api.nvim_create_autocmd("ColorScheme", {
     group = vim.api.nvim_create_augroup("subtle_diff_hl", { clear = true }),
     callback = set_subtle_diff_hl,
-})
--- Diffview is lazy-loaded by :DiffviewOpen, and its setup() calls
--- update_diff_hl() which clobbers DiffviewDiffAddAsDelete back to bg=NONE.
--- Re-apply our override after each DiffView opens so the left-pane red sticks.
-vim.api.nvim_create_autocmd("User", {
-    pattern = { "DiffviewViewOpened", "DiffviewViewEnter" },
-    group = vim.api.nvim_create_augroup("diffview_red_left_pane", { clear = true }),
-    callback = function()
-        vim.api.nvim_set_hl(0, "DiffviewDiffAddAsDelete", { bg = "#3a1d22" })
-    end,
 })
