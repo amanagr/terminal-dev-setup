@@ -1881,17 +1881,115 @@ require("lazy").setup({
 
                 -- Shared "switch to commit under cursor" action used by
                 -- both <CR> and <LeftRelease>.
+                --
+                -- Fast path: mutate the existing DiffView's left/right
+                -- Rev objects in place and call its built-in
+                -- update_files() to recompute the file list and refresh
+                -- the diff windows. No DiffviewClose, no window
+                -- teardown, no file-panel rebuild — the diff buffers'
+                -- contents just swap.
+                --
+                -- Slow path (fallback): if the diffview internals can't
+                -- be reached (the relied-on lib/GitRev/RevType modules
+                -- moved, the current view isn't a regular DiffView,
+                -- etc.) tear the panel down, close the tab, and rebuild
+                -- everything from scratch — same behaviour as before.
+                local function refresh_panel_for(sha, msg_b, log_b, log_w)
+                    if vim.api.nvim_buf_is_valid(msg_b) then
+                        local new_msg = vim.fn.systemlist({
+                            "git", "log", "-1", "--format=%h %s%n%n%b", sha,
+                        })
+                        vim.bo[msg_b].modifiable = true
+                        vim.api.nvim_buf_set_lines(msg_b, 0, -1, false, new_msg)
+                        vim.bo[msg_b].modifiable = false
+                        highlight_commit_msg(msg_b, new_msg)
+                    end
+                    if vim.api.nvim_win_is_valid(log_w) and vim.api.nvim_buf_is_valid(log_b) then
+                        local short = sha:sub(1, 7)
+                        local lines = vim.api.nvim_buf_get_lines(log_b, 0, -1, false)
+                        for i, line in ipairs(lines) do
+                            if line:sub(1, #short) == short then
+                                vim.api.nvim_win_set_cursor(log_w, { i, 0 })
+                                break
+                            end
+                        end
+                        vim.api.nvim_set_current_win(log_w)
+                        -- Reset the focus-debounce timestamp so a click
+                        -- in the next ~250ms is treated as focusing.
+                        log_focus_at = vim.uv.now()
+                    end
+                end
+
                 local function switch_to_cursor_commit()
                     local sha = vim.api.nvim_get_current_line():match("^(%x+)")
                     if not sha or #sha < 4 then return end
-                    -- Tear the panel down first (its windows die with
-                    -- DiffviewClose anyway), reopen the view, then
-                    -- recreate the panel on the next tick so
-                    -- lib.get_current_view sees the new view object.
-                    close_commit_panel()
-                    vim.cmd("DiffviewClose")
-                    vim.cmd("DiffviewOpen " .. sha .. "^!")
-                    vim.schedule(open_commit_panel)
+
+                    local msg_b = commit_panel.msg_buf
+                    local log_b = commit_panel.log_buf
+                    local log_w = commit_panel.log_win
+                    local msg_w = commit_panel.msg_win
+                    local panel_alive = msg_b and log_b and log_w and msg_w
+                        and vim.api.nvim_buf_is_valid(msg_b)
+                        and vim.api.nvim_buf_is_valid(log_b)
+                        and vim.api.nvim_win_is_valid(log_w)
+                        and vim.api.nvim_win_is_valid(msg_w)
+
+                    local function slow_fallback()
+                        close_commit_panel()
+                        vim.cmd("silent! DiffviewClose")
+                        vim.cmd("silent DiffviewOpen " .. sha .. "^!")
+                        vim.schedule(open_commit_panel)
+                    end
+
+                    if not panel_alive then
+                        slow_fallback()
+                        return
+                    end
+
+                    -- Resolve <sha>^ to a hash. If sha is a root commit,
+                    -- there's no parent — close+reopen handles the null-
+                    -- tree comparison natively, so fall back.
+                    local parent = vim.fn.systemlist({
+                        "git", "rev-parse", "--verify", "--quiet", sha .. "^",
+                    })[1]
+                    if vim.v.shell_error ~= 0 or not parent or parent == "" then
+                        slow_fallback()
+                        return
+                    end
+
+                    local ok_lib, lib = pcall(require, "diffview.lib")
+                    local ok_rev, rev_mod = pcall(require, "diffview.vcs.adapters.git.rev")
+                    local ok_rt, rt_mod   = pcall(require, "diffview.vcs.rev")
+                    local view = ok_lib and lib.get_current_view() or nil
+                    if not (view and view.left and view.right and view.update_files
+                            and ok_rev and ok_rt and rev_mod.GitRev and rt_mod.RevType) then
+                        slow_fallback()
+                        return
+                    end
+
+                    local ok_mutate = pcall(function()
+                        view.left  = rev_mod.GitRev(rt_mod.RevType.COMMIT, parent)
+                        view.right = rev_mod.GitRev(rt_mod.RevType.COMMIT, sha)
+                        view.rev_arg = sha .. "^!"
+                        -- update_files is debounced; lazyredraw masks
+                        -- the brief render churn that follows.
+                        local saved_lazy = vim.o.lazyredraw
+                        vim.o.lazyredraw = true
+                        view:update_files()
+                        vim.schedule(function() vim.o.lazyredraw = saved_lazy end)
+                    end)
+                    if not ok_mutate then
+                        slow_fallback()
+                        return
+                    end
+
+                    -- Refresh our bottom panel (msg buffer + log cursor).
+                    -- update_files is debounced (100ms) — schedule the
+                    -- panel refresh slightly later so it lands after
+                    -- diffview's first redraw.
+                    vim.defer_fn(function()
+                        refresh_panel_for(sha, msg_b, log_b, log_w)
+                    end, 120)
                 end
 
                 vim.keymap.set("n", "<CR>", switch_to_cursor_commit,
