@@ -192,6 +192,16 @@ orb -m "$NAME" bash <<EOF
     install -m 0644 "$REPO_DIR/vm/claude-settings.json" \$HOME/.claude/settings.json
     install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
 
+    # OrbStack's Ubuntu 24.04 base image is minimal — no git, no curl. Both
+    # are used immediately below (git config, curl for the claude installer
+    # and the gh keyring). Zulip's own ./tools/provision installs git later
+    # but that runs *after* this script, so install the essentials up front.
+    if ! command -v git >/dev/null || ! command -v curl >/dev/null; then
+        sudo apt-get update -qq
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \\
+            git curl ca-certificates
+    fi
+
     # Default editor for git commit messages, rebases, etc.
     git config --global core.editor vim
 
