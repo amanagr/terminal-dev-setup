@@ -119,7 +119,8 @@ require("lazy").setup({
         sections = { lualine_c = { { "filename", path = 1 } } },
     } },
 
-    { "sindrets/diffview.nvim", cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" } },
+    { "nvim-tree/nvim-web-devicons", lazy = true },
+    { "sindrets/diffview.nvim", cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" }, dependencies = { "nvim-tree/nvim-web-devicons" } },
 }, {
     checker = { enabled = false },
     change_detection = { notify = false },
