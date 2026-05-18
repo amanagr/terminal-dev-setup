@@ -10,15 +10,6 @@ font-size = 14
 # with a live foreground process. Power-user default.
 confirm-close-surface = false
 
-# Borderless, maximized on launch. `window-decoration = none` hides
-# the platform window chrome (GTK header bar on Linux, titlebar on
-# macOS); `maximize = true` opens each new window filling the workspace
-# (no titlebar, no gaps, but not the exclusive fullscreen mode that
-# hides the system panel). The canonical value set is none|auto|client|
-# server — bool `false` is accepted only for back-compat.
-window-decoration = none
-maximize = true
-
 # GitHub Dark color scheme (terminalcolors.com/themes/github/dark).
 # Shared with starship and tmux — see tmux.conf for the palette
 # mapping.
