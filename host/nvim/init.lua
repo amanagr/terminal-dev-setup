@@ -1,8 +1,7 @@
 -- =============================================================================
 -- init.lua — slim host-side Neovim config.
--- Themes + visual chrome only. No git plugins, no oil, no editing helpers.
--- The full-featured nvim (LSP/Mason/telescope/treesitter/blink.cmp) lives
--- in ../../vm/nvim/init.lua and runs inside the OrbStack VMs.
+-- Themes + visual chrome + diffview for branch review. No LSP, no oil,
+-- no editing helpers.
 -- =============================================================================
 
 vim.g.mapleader = " "
@@ -85,6 +84,8 @@ map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Exit terminal mode" })
 
 map("n", "<leader>ff", ":find ", { desc = "Find file" })
 
+map("n", "<leader>gl", "<cmd>DiffviewOpen main...HEAD<CR>", { desc = "Diffview: branch vs main" })
+
 vim.filetype.add({ extension = { hbs = "handlebars" } })
 
 -- =============================================================================
@@ -117,6 +118,8 @@ require("lazy").setup({
         options = { theme = "auto", component_separators = "|", section_separators = "" },
         sections = { lualine_c = { { "filename", path = 1 } } },
     } },
+
+    { "sindrets/diffview.nvim", cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" } },
 }, {
     checker = { enabled = false },
     change_detection = { notify = false },
