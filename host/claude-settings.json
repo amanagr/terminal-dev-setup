@@ -1,7 +1,8 @@
 {
   "permissions": {
     "ask": [
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git push)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [
@@ -78,6 +79,8 @@
   "enabledPlugins": {
     "figma@claude-plugins-official": true
   },
-  "effortLevel": "high",
-  "awaySummaryEnabled": false
+  "effortLevel": "xhigh",
+  "awaySummaryEnabled": false,
+  "skipAutoPermissionPrompt": true,
+  "tui": "fullscreen"
 }

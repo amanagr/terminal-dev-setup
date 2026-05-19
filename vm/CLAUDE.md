@@ -11,8 +11,8 @@ over `orb -m <name>`, etc.
 
 | File | Deployed inside the VM at |
 | ---- | ------------------------- |
-| `claude-settings.json` | `~/.claude/settings.json` |
 | `bash-aliases.sh`      | `~/.config/terminal-dev-setup/aliases.sh` |
+| *(no `claude-settings.json` here)* | claude settings are shared with the host — `bin/create-worktree.sh` ships [`../host/claude-settings.json`](../host/claude-settings.json) with the `hooks` block stripped (host hooks reference tmux/notification scripts that don't exist on the VM) into `~/.claude/settings.json` |
 
 The bash aliases are sourced from `~/.bashrc` (between `# >>> managed-by:
 create-worktree.sh >>>` / `<<<` markers that the script rewrites on every
@@ -72,27 +72,29 @@ Full list in [`bash-aliases.sh`](./bash-aliases.sh). The non-obvious ones:
 
 ## Workflow
 
-After editing anything in `vm/`:
+After editing `vm/bash-aliases.sh` *or* `host/claude-settings.json`
+(the VM's settings come from the host file now):
 
 1. **Edit and commit** as usual on the host.
 2. **Re-run `bin/create-worktree.sh <name>`** for each existing VM (no
    `--rebuild` needed — the provision step is idempotent and re-copies
-   `claude-settings.json`, `bash-aliases.sh`, and rewrites the managed
-   `~/.bashrc` block). For a hard reset, use
-   `bin/create-worktree.sh --rebuild <name>`.
+   the settings/aliases and rewrites the managed `~/.bashrc` block).
+   For a hard reset, use `bin/create-worktree.sh --rebuild <name>`.
 
 OrbStack auto-mounts your Mac filesystem (including `$HOME`) into the VM
-at the same paths, so an ad-hoc refresh is also a one-liner:
+at the same paths, so an ad-hoc refresh of a running VM is also a
+one-liner — strip `hooks` with `jq` and write directly:
 
 ```sh
-orb -m <name> cp /Users/$USER/terminal-dev-setup/vm/claude-settings.json ~/.claude/settings.json
+jq 'del(.hooks)' /Users/$USER/terminal-dev-setup/host/claude-settings.json \
+    | orb -m <name> tee ~/.claude/settings.json >/dev/null
 ```
 
 (`$USER` expands on the Mac — by default OrbStack provisions the VM with
 the same username, so the path resolves correctly on both sides.)
 
-Claude runs in plan mode by default in the VM so multi-step changes
-get an explicit approval gate before they touch the dev tree. No
-`hooks` are configured: `notify-send` needs a desktop session the
-headless VM doesn't have, and the in-terminal pause is signal enough
-when you're SSHed in.
+`hooks` is stripped because the host's notification + tmux-state hooks
+point at scripts under `~/.local/bin/` that don't exist on the VM and
+don't make sense headless (`notify-send` needs a desktop session, and
+the in-terminal pause is signal enough when you're SSHed in). Everything
+else — model, permissions, `effortLevel`, plugins — comes through as-is.

@@ -189,18 +189,27 @@ orb -m "$NAME" bash <<EOF
     set -euo pipefail
 
     mkdir -p \$HOME/.claude \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
-    install -m 0644 "$REPO_DIR/vm/claude-settings.json" \$HOME/.claude/settings.json
     install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
 
-    # OrbStack's Ubuntu 24.04 base image is minimal — no git, no curl. Both
-    # are used immediately below (git config, curl for the claude installer
-    # and the gh keyring). Zulip's own ./tools/provision installs git later
-    # but that runs *after* this script, so install the essentials up front.
-    if ! command -v git >/dev/null || ! command -v curl >/dev/null; then
+    # OrbStack's Ubuntu 24.04 base image is minimal — no git, no curl, no jq.
+    # git/curl are used immediately below (git config, curl for the claude
+    # installer and the gh keyring). jq strips the host-only \`hooks\` block
+    # out of host/claude-settings.json before installing it as the VM's
+    # ~/.claude/settings.json — the hook commands point at host scripts
+    # (\$HOME/.local/bin/claude-tmux-state.sh, claude-notify.sh) that don't
+    # exist on the VM and don't make sense headless. Zulip's own
+    # ./tools/provision installs git later but that runs *after* this script,
+    # so install the essentials up front.
+    if ! command -v git >/dev/null || ! command -v curl >/dev/null || ! command -v jq >/dev/null; then
         sudo apt-get update -qq
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \\
-            git curl ca-certificates
+            git curl ca-certificates jq
     fi
+
+    # Single source of truth for claude settings is host/claude-settings.json;
+    # the VM gets the same file with \`hooks\` removed.
+    jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" \\
+        > \$HOME/.claude/settings.json
 
     # Default editor for git commit messages, rebases, etc.
     git config --global core.editor vim
