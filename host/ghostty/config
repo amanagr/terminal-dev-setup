@@ -36,11 +36,12 @@ palette = 13=#d2a8ff
 palette = 14=#56d4dd
 palette = 15=#ffffff
 
-# Global hotkey: option+space drops down a Ghostty quick terminal
-# from anywhere (works even when another app is focused). Run
-# `tmux a` inside to attach to the main session. macOS prompts for
-# Accessibility permission on first reload — must be granted under
-# System Settings → Privacy & Security → Accessibility.
-# Avoided cmd+grave: collides with VSCode's "Toggle Terminal" and
-# macOS's "cycle windows in active app".
-keybind = global:opt+space=toggle_quick_terminal
+# Global hotkey: opt+` drops down a Ghostty quick terminal from
+# anywhere (works even when another app is focused). Run `tmux a`
+# inside to attach to the main session. Needs Accessibility
+# permission for Ghostty under System Settings → Privacy &
+# Security → Accessibility.
+# Avoided cmd+grave (VSCode's Toggle Terminal + macOS "cycle
+# windows") and opt+space (macOS text input layer eats it for
+# non-breaking space).
+keybind = global:opt+grave_accent=toggle_quick_terminal
