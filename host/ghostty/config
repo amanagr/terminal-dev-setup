@@ -45,3 +45,11 @@ palette = 15=#ffffff
 # windows") and opt+space (macOS text input layer eats it for
 # non-breaking space).
 keybind = global:opt+grave_accent=toggle_quick_terminal
+
+# Stop the dock icon from bouncing on terminal bell. The bell fires on
+# routine things — tab-completion with no match, end-of-buffer in
+# less/man — and the quick terminal doesn't count as "focused" to
+# macOS, so every bell triggers a dock bounce. `no-attention` keeps
+# the title-bar 🔔 and dock badge but suppresses NSApp's
+# requestUserAttention.
+bell-features = no-attention
