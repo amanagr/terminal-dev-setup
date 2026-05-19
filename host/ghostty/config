@@ -35,3 +35,9 @@ palette = 12=#79c0ff
 palette = 13=#d2a8ff
 palette = 14=#56d4dd
 palette = 15=#ffffff
+
+# Global hotkey: cmd+` drops down a Ghostty quick terminal from
+# anywhere (works even when another app is focused). Run `tmux a`
+# inside to attach to the main session. macOS will prompt for
+# Accessibility permission the first time it fires.
+keybind = global:cmd+grave_accent=toggle_quick_terminal
