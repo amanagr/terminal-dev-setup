@@ -46,6 +46,12 @@ palette = 15=#ffffff
 # non-breaking space).
 keybind = global:opt+grave_accent=toggle_quick_terminal
 
+# Slide in from the right edge instead of the top — leaves the menu
+# bar / notification area visible and keeps the terminal near the
+# trackpad-scroll side. Requires a full Ghostty restart (not just
+# config reload) to take effect.
+quick-terminal-position = right
+
 # Stop the dock icon from bouncing on terminal bell. The bell fires on
 # routine things — tab-completion with no match, end-of-buffer in
 # less/man — and the quick terminal doesn't count as "focused" to
