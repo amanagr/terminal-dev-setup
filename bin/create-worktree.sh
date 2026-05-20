@@ -180,22 +180,42 @@ step "Allocate HOST_PORT for '$NAME' (lock-guarded)"
 mkdir -p "$PORTS_DIR"
 LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/create-worktree.$UID.lock"
 LOCK_WAIT_MAX=120  # seconds before bailing on a stuck lock
+# Sanity-check the lock dir up-front. `set -C; echo > FILE` exits 1 for
+# both EEXIST (lock taken) AND any other I/O error (missing parent dir,
+# read-only fs, ENOSPC). Without this check the wait loop would spin
+# 120 s on those cases, claiming "another create-worktree.sh is running".
+lock_parent=$(dirname "$LOCK_FILE")
+[ -d "$lock_parent" ] && [ -w "$lock_parent" ] || {
+    echo "create-worktree.sh: lock dir $lock_parent is missing or unwritable" >&2
+    exit 1
+}
 # Cleanup trap on EXIT + the three common-interrupt signals. SIGKILL is
 # uncatchable per POSIX; the stale-PID reclaim below handles that case.
 # `rm -f` (not `rmdir`) — the lock is a file.
 trap 'rm -f "$LOCK_FILE"' EXIT INT TERM HUP
+# umask narrows the lock to user-only (0600) so the /tmp fallback case
+# can't be DoS'd by a hostile co-user writing their own PID into it.
+# XDG_RUNTIME_DIR is already 0700; this is defense-in-depth.
+old_umask=$(umask)
+umask 077
 waited=0
 while ! ( set -C; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; do
     # Try to reclaim an orphaned lock: if the file's PID points at a
     # process that no longer exists, it's stale (kill -9 / OOM / hard
     # reboot). Read once into a variable so an in-flight rewrite by a
     # racer can't shift the value between check and message.
+    # `|| true` is load-bearing on macOS bash 3.2 — `set -e` aborts on
+    # a failed command substitution there (POSIX has since been
+    # clarified; bash 4.4+ doesn't, but the macOS system bash is
+    # frozen at 3.2 for GPLv3 reasons).
     holder_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
     if [ -n "$holder_pid" ] && ! kill -0 "$holder_pid" 2>/dev/null; then
         echo "stale lock from PID $holder_pid — reclaiming"
         # Re-verify after delete: if a fresh acquirer raced in between
         # our read and our delete, their lock's PID differs from $holder_pid.
-        # Don't delete what we didn't validate.
+        # Don't delete what we didn't validate. (Theoretical hole: PID
+        # recycling could still match; the window is small and the
+        # consequence is a double-acquire — acceptable trade-off.)
         current=$(cat "$LOCK_FILE" 2>/dev/null || true)
         if [ "$current" = "$holder_pid" ]; then
             rm -f "$LOCK_FILE"
@@ -211,6 +231,7 @@ while ! ( set -C; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; do
     sleep 1
     waited=$((waited + 1))
 done
+umask "$old_umask"
 
 touch "$PORTS_FILE"
 PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
@@ -253,6 +274,10 @@ mv "$ZULIP_VAGRANT_CONFIG.new" "$ZULIP_VAGRANT_CONFIG"
 # hasn't yet `docker run`-ed its container. In practice Vagrant reads
 # the file once early in its run and the docker port-mapping is pinned
 # at create-container time, so this is a sub-second window.
+#
+# Past this point a Ctrl-C leaves no script-level state to clean up
+# (the lock is released, the temp file isn't created yet, and `vagrant
+# up` / `vagrant destroy` manage their own state).
 rm -f "$LOCK_FILE"
 trap - EXIT INT TERM HUP
 

@@ -204,7 +204,7 @@ live-update() {
     # `git rev-parse --is-inside-work-tree` prints "true"/"false" and exits 0
     # in both cases (only errors when outside a repo). Inside .git/ or a bare
     # repo it prints "false" with exit 0 — check stdout, not just exit code.
-    [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]] \
+    [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] \
         || { echo "live-update: not in a git worktree" >&2; return 1 }
     git rev-parse --verify --quiet "$ref" >/dev/null \
         || { echo "live-update: branch '$ref' missing; see vm/CLAUDE.md §Webpack HMR" >&2; return 1 }
