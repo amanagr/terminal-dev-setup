@@ -51,6 +51,8 @@ gfix() {
 # Show divergence from a base branch.
 gdiverg() {
     local base="${1:-upstream/main}"
+    git rev-parse --verify --quiet "$base" >/dev/null \
+        || { echo "gdiverg: '$base' is not a known ref" >&2; return 1; }
     echo "Commits ahead of $base:"
     git log --oneline "$base"..HEAD
     printf '\nCommits behind %s:\n' "$base"
@@ -78,13 +80,14 @@ fi
 if [ -n "${WORKTREE_DIR:-}" ]; then
     alias zcd='cd "$WORKTREE_DIR"'
 fi
-# `--interface=` (empty) is required: without it, run-dev binds 127.0.0.1
-# inside the container and Vagrant's host port forward can't reach it.
-# See vm/CLAUDE.md.
+# `--interface=` (empty) is defensive: run-dev already defaults to bind-all
+# when the OS user is `vagrant` (see run-dev:92-104), but the explicit form
+# is robust against upstream changes. See vm/CLAUDE.md.
 alias run='./tools/run-dev --interface='
 
 zlint() {
-    ( cd "${WORKTREE_DIR:-.}" && ./tools/lint --modified )
+    : "${WORKTREE_DIR:?set WORKTREE_DIR or source ~/.zulip-dev-env.sh first}"
+    ( cd "$WORKTREE_DIR" && ./tools/lint --modified )
 }
 
 # Cherry-pick the local Zulip HMR fix onto the current branch — enables
@@ -93,7 +96,29 @@ zlint() {
 # common dir (added by ../bin/create-worktree.sh setup); see vm/CLAUDE.md
 # §"Webpack HMR on non-9991 worktrees" for the rationale. Remove once
 # the change lands upstream.
-alias live-update='git cherry-pick fix-webpack-client-port-for-non-default-host-port'
+#
+# Guards: must be in a git worktree, branch ref must exist, must not be
+# already in HEAD's history (avoids the sticky CHERRY_PICK_HEAD state from
+# cherry-picking an already-merged commit).
+live-update() {
+    local ref=fix-webpack-client-port-for-non-default-host-port
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        || { echo "live-update: not in a git repo" >&2; return 1; }
+    git rev-parse --verify --quiet "$ref" >/dev/null \
+        || { echo "live-update: branch '$ref' missing; see vm/CLAUDE.md §Webpack HMR" >&2; return 1; }
+    if git merge-base --is-ancestor "$ref" HEAD; then
+        echo "live-update: already in HEAD's history, nothing to do"
+        return 0
+    fi
+    git cherry-pick "$ref" || {
+        echo "live-update: cherry-pick conflicted — \`git cherry-pick --abort\` to bail, or resolve + \`git cherry-pick --continue\`" >&2
+        return 1
+    }
+}
 
 # --- Paths ---
-export PATH="$HOME/.local/bin:$PATH"
+# Idempotent — re-sourcing ~/.bashrc shouldn't keep growing PATH.
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac

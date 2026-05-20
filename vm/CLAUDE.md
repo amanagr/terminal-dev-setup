@@ -43,7 +43,7 @@ either `zcd` (alias) or `cd "$WORKTREE_DIR"`.
 | Re-up after halt                | `bin/create-worktree.sh <name>` (re-pins HOST_PORT) — **don't** `vagrant up` directly |
 | Hard reset                      | `bin/create-worktree.sh --rebuild <name>` (`vagrant destroy -f` + re-up + re-provision) |
 | Jump to worktree (inside)       | `zcd` (alias → `cd $WORKTREE_DIR`) |
-| Run dev server (inside)         | `zcd && run` (alias → `./tools/run-dev --interface=`). Serves http://localhost:&lt;port&gt;. The empty `--interface` is required — without it, run-dev binds 127.0.0.1 inside the container and Vagrant's host port forward can't reach it. |
+| Run dev server (inside)         | `zcd && run` (alias → `./tools/run-dev --interface=`). Serves http://localhost:&lt;port&gt;. The empty `--interface` is defensive — `run-dev` already defaults to bind-all when the OS user is `vagrant` (see run-dev:92-104), but the explicit form is robust against upstream changes. |
 | First-time provision            | Automatic — Zulip's Vagrantfile runs `tools/setup/vagrant-provision` (which calls `./tools/provision`) during `vagrant up`. ~10–20 min. |
 | Start Claude (inside)           | `claude` first time, `claude --continue` to resume last session in cwd, `claude --resume` for picker |
 | Quick edit (inside)             | `v <file>` (alias → `vim`) |
@@ -69,7 +69,7 @@ worktree's port.
 
 ### Webpack HMR on non-9991 worktrees
 
-Zulip's `tools/webpack` hardcodes the webpack-dev-server port at 9994, and
+Zulip's `tools/run-dev` always passes `--port=9994` to `tools/webpack`, and
 webpack-dev-server's HMR client connects directly to `ws://localhost:9994/ws`,
 bypassing the proxy. With `HOST_PORT != 9991`, the Vagrant forward for 9994
 lands at host port `host_port+3` instead of 9994 — so HMR breaks on those
@@ -102,9 +102,9 @@ upstream — see the commit message for the rationale.
 - **git config** — `core.editor = vim` set globally so commit messages,
   rebases, etc. open in vim instead of nano.
 
-`git`, `curl`, `jq`, and `vim` come from Zulip's own provision (vagrant-provision
-→ ./tools/provision) and the base image (`tools/setup/dev-vagrant-docker/Dockerfile`),
-so no extra install step here.
+`curl` is in the base image (`tools/setup/dev-vagrant-docker/Dockerfile`);
+`git`, `jq`, and `vim` come from Zulip's own provision (vagrant-provision
+→ `./tools/provision`). So no extra install step here.
 
 ## Aliases (highlights)
 
@@ -124,15 +124,14 @@ Full list in [`bash-aliases.sh`](./bash-aliases.sh). The non-obvious ones:
 ## Workflow
 
 After editing `vm/bash-aliases.sh` *or* `host/claude-settings.json`
-(the container's settings come from the host file now):
+(the container's settings come from the host file now), sync the change
+into every running container — don't just commit. The fast path is a
+one-liner `vagrant upload`; full `create-worktree.sh` re-run is the
+"hard reset" alternative.
 
-1. **Edit and commit** as usual on the host.
-2. **Re-run `bin/create-worktree.sh <name>`** for each existing container
-   (no `--rebuild` needed — the script re-uploads aliases/settings and
-   rewrites the managed `~/.bashrc` block on every run). For a hard reset,
-   use `bin/create-worktree.sh --rebuild <name>`.
+**Primary flow** — push directly into each running container:
 
-Ad-hoc refresh of one already-running container is a one-liner:
+For `vm/bash-aliases.sh`:
 
 ```sh
 cd ~/work/<name> && vagrant upload \
@@ -149,6 +148,13 @@ tmp=$(mktemp) && \
     ( cd ~/work/<name> && vagrant upload "$tmp" /home/vagrant/.claude/settings.json ) && \
     rm "$tmp"
 ```
+
+Then commit on the host as usual.
+
+**Hard reset variant** (slower, also rewrites `~/.bashrc` block + re-runs
+all post-up provisioning): `bin/create-worktree.sh <name>` (no `--rebuild` —
+the script is idempotent). Use this if the bashrc managed block has drifted
+or you want all post-up steps refreshed in one go.
 
 `hooks` is stripped because the host's notification + tmux-state hooks
 point at scripts under `~/.local/bin/` that don't exist in the container

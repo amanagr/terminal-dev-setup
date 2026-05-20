@@ -167,9 +167,19 @@ else
 fi
 
 
-# ---------- 5. Allocate this worktree's HOST_PORT ----------
-step "Allocate HOST_PORT for '$NAME'"
+# ---------- 5+6. Allocate HOST_PORT and pin it in ~/.zulip-vagrant-config ----------
+# Both steps share a lock so two concurrent invocations don't:
+#  - both read max=9991 from an empty tsv and assign the same next port, or
+#  - both write the global config with different HOST_PORTs and clobber each other.
+# macOS doesn't ship flock(1), so we use a mkdir-based lock (atomic per POSIX).
+step "Allocate HOST_PORT for '$NAME' (lock-guarded)"
 mkdir -p "$PORTS_DIR"
+LOCK_DIR="$PORTS_DIR/.create-worktree.lock"
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    echo "another create-worktree.sh is running — waiting…"
+    sleep 1
+done
+trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 touch "$PORTS_FILE"
 PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
 if [ -z "$PORT" ]; then
@@ -183,8 +193,6 @@ if [ -z "$PORT" ]; then
 fi
 echo "$NAME → host port $PORT (dev server: http://localhost:$PORT)"
 
-
-# ---------- 6. Rewrite ~/.zulip-vagrant-config managed block ----------
 step "Pin HOST_PORT $PORT in $ZULIP_VAGRANT_CONFIG"
 touch "$ZULIP_VAGRANT_CONFIG"
 # Strip any previous managed block, then re-append. Preserves unrelated
@@ -239,8 +247,10 @@ step "Install claude/gh + drop aliases & claude settings into the container"
 # Claude settings: single source of truth is host/claude-settings.json;
 # strip the `hooks` block (those reference ~/.local/bin/claude-*.sh scripts
 # that don't exist headless and don't make sense without a desktop session).
-filtered_settings=$(mktemp -t claude-settings.json.XXXXXX)
-trap 'rm -f "$filtered_settings"' EXIT
+# `mktemp -t prefix` on BSD/macOS is a different command (the prefix is just
+# a string, not a template) — explicit `prefix.XXXXXX` template is portable.
+filtered_settings=$(mktemp "${TMPDIR:-/tmp}/claude-settings.json.XXXXXX")
+trap 'rm -f "$filtered_settings"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
 ( cd "$DIR" && vagrant upload "$filtered_settings" /home/vagrant/.claude/settings.json )
 
@@ -278,7 +288,11 @@ fi
 if ! command -v gh >/dev/null 2>&1; then
     (
         sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
-        gh_tmp=\$(mktemp -d) && trap 'rm -rf "\$gh_tmp"' EXIT
+        # Two statements — `&&`-chained would suspend set -e for the LHS,
+        # so a failed mktemp would leave \$gh_tmp empty and curl would write
+        # to "/keyring.gpg" without the trap fix-up firing.
+        gh_tmp=\$(mktemp -d)
+        trap 'rm -rf "\$gh_tmp"' EXIT
         curl -fsSL -o "\$gh_tmp/keyring.gpg" \\
             https://cli.github.com/packages/githubcli-archive-keyring.gpg
         sudo install -m 0644 -o root -g root \\

@@ -191,11 +191,29 @@ zlint() {
 }
 
 # Cherry-pick the local Zulip HMR fix onto the current branch — enables
-# webpack hot-reload on non-9991 worktrees. Mirrors the same alias in
-# vm/bash-aliases.sh so it's reachable from both VSCode's terminal on
-# the host and `vagrant ssh` inside a container. Remove once the fix
-# lands upstream.
-alias live-update='git cherry-pick fix-webpack-client-port-for-non-default-host-port'
+# webpack hot-reload on non-9991 worktrees. Mirrors the same function in
+# vm/bash-aliases.sh so it's reachable from both VSCode's host terminal
+# and `vagrant ssh` inside a container. Remove once the fix lands
+# upstream.
+#
+# Guards: must be in a git worktree, branch ref must exist, must not be
+# already in HEAD's history (avoids the sticky CHERRY_PICK_HEAD state from
+# cherry-picking an already-merged commit).
+live-update() {
+    local ref=fix-webpack-client-port-for-non-default-host-port
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        || { echo "live-update: not in a git repo" >&2; return 1 }
+    git rev-parse --verify --quiet "$ref" >/dev/null \
+        || { echo "live-update: branch '$ref' missing; see vm/CLAUDE.md §Webpack HMR" >&2; return 1 }
+    if git merge-base --is-ancestor "$ref" HEAD; then
+        echo "live-update: already in HEAD's history, nothing to do"
+        return 0
+    fi
+    git cherry-pick "$ref" || {
+        echo "live-update: cherry-pick conflicted — \`git cherry-pick --abort\` to bail, or resolve + \`git cherry-pick --continue\`" >&2
+        return 1
+    }
+}
 
 # --- Paths ---
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
