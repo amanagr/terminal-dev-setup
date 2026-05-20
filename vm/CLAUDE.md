@@ -24,7 +24,7 @@ run). Same for `~/.zulip-dev-env.sh`, which exports:
 
 | Var | Value |
 | --- | ----- |
-| `EXTERNAL_HOST`   | `localhost:9991` (every worktree uses the canonical Zulip dev port) |
+| `EXTERNAL_HOST`   | `localhost:<port>` (per-worktree port assigned by `create-worktree.sh`) |
 | `WORKTREE_DIR`    | host path to the worktree (e.g. `/Users/$USER/work/<name>`) |
 
 `WORKTREE_DIR` is the Mac-side path. Zulip's Vagrantfile bind-mounts the
@@ -40,7 +40,7 @@ either `zcd` (alias) or `cd "$WORKTREE_DIR"`.
 | Attach (shell as `vagrant`)     | `cd ~/work/<name> && vagrant ssh` |
 | Detach                          | `exit` or `Ctrl-D` |
 | Halt                            | `cd ~/work/<name> && vagrant halt` |
-| Switch active worktree          | `bin/create-worktree.sh <other>` — auto-halts whoever is currently on host 9991, then ups `<other>` |
+| Re-up after halt                | `bin/create-worktree.sh <name>` (re-pins HOST_PORT) — **don't** `vagrant up` directly |
 | Hard reset                      | `bin/create-worktree.sh --rebuild <name>` (`vagrant destroy -f` + re-up + re-provision) |
 | Jump to worktree (inside)       | `zcd` (alias → `cd $WORKTREE_DIR`) |
 | Run dev server (inside)         | `zcd && run` (alias → `./tools/run-dev --interface=`). Serves http://localhost:&lt;port&gt;. The empty `--interface` is required — without it, run-dev binds 127.0.0.1 inside the container and Vagrant's host port forward can't reach it. |
@@ -48,25 +48,24 @@ either `zcd` (alias) or `cd "$WORKTREE_DIR"`.
 | Start Claude (inside)           | `claude` first time, `claude --continue` to resume last session in cwd, `claude --resume` for picker |
 | Quick edit (inside)             | `v <file>` (alias → `vim`) |
 
-## Single-active workflow + port
+## Per-worktree port
 
-Every worktree's container is configured for `HOST_PORT=9991` (the canonical
-Zulip dev port). Only one can run at a time. The script writes a managed
-block to `~/.zulip-vagrant-config` pinning `HOST_PORT 9991` and, before
-`vagrant up`, auto-halts whatever other vagrant box is currently holding
-host port 9991 (`docker ps --filter publish=9991`, identify by `<name>_default_*`
-container name, `vagrant halt` from that worktree's dir).
+Each worktree gets a sequential `HOST_PORT` (stride 10 — Zulip's Vagrantfile
+forwards `host_port`, `host_port+3`, `host_port+4`). The mapping lives in
+`~/.config/terminal-dev-setup/worktree-ports.tsv`. The first worktree the
+script runs against gets 9991; subsequent worktrees get 10001, 10011, …
+(order of first run, not name — edit the tsv by hand to reassign, but a
+reassigned port only takes effect after `--rebuild`, which destroys the
+container's writable layer and re-runs Zulip's full provision).
 
-**Why every worktree shares 9991**: Zulip's `tools/webpack` hardcodes
-`--port=9994`, and webpack-dev-server's HMR client connects directly to
-`ws://localhost:9994/ws` — bypassing the proxy. Anything other than
-HOST_PORT=9991 puts the Vagrant forward at host port `9994+3`, so `localhost:9994`
-on the host points to nothing and HMR breaks. Locking everyone to 9991
-keeps HMR working at the cost of running one worktree at a time.
+The script rewrites a managed block in `~/.zulip-vagrant-config` before
+each `vagrant up`, since that file is `$HOME`-global. Each running
+container's port mapping is pinned at `docker run` time, so parallel
+worktrees coexist.
 
-To switch worktrees: `bin/create-worktree.sh <new>` is the canonical entry
-point — it does the auto-halt + up dance. `vagrant up` directly will fail
-with a port collision if another worktree is currently up.
+**Important**: never `vagrant up` or `vagrant reload` outside of
+`create-worktree.sh` — the global config may currently hold a different
+worktree's port.
 
 ## Tools installed by the provision step
 

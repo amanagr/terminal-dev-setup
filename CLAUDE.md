@@ -29,6 +29,6 @@ After every change to a tracked file:
   a fresh Zulip clone + a Vagrant-managed Docker container, runs Zulip's full
   `./tools/provision` automatically (10–20 min on first run), and ships
   `vm/` into it. Use `--rebuild <name>` to `vagrant destroy -f` and re-provision.
-  Every worktree's container binds host port 9991 (the canonical Zulip dev
-  port), so only one runs at a time — the script auto-halts whichever is
-  currently on 9991 before bringing up the next. Dev server: `http://localhost:9991`.
+  Each worktree gets its own host port (sequential, stored in
+  `~/.config/terminal-dev-setup/worktree-ports.tsv`); the dev server is at
+  `http://localhost:<port>`.
