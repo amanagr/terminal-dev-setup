@@ -19,14 +19,13 @@
 # So /Users/$USER/work/<name> resolves directly inside the container too.
 # The container's $HOME is /home/vagrant — a *different* path.
 #
-# Per-worktree port: Zulip's Vagrantfile reads HOST_PORT from the global
-# ~/.zulip-vagrant-config. We allocate a port per worktree (sequential,
-# stride 10 — the Vagrantfile forwards host_port, +3, +4) stored in
-# ~/.config/terminal-dev-setup/worktree-ports.tsv, then rewrite a managed
-# block in ~/.zulip-vagrant-config before every `vagrant up`. Each running
-# container's port mapping is pinned at `docker run` time, so parallel
-# worktrees coexist — but never `vagrant reload` without re-running this
-# script (the file may currently hold a different worktree's port).
+# Port: every worktree's container is configured to bind host port 9991
+# (the canonical Zulip dev port). Only one can run at a time — the script
+# halts any other running worktree before `vagrant up`. This sidesteps a
+# Zulip upstream limitation: `tools/webpack` hardcodes `--port=9994`, and
+# webpack-dev-server's HMR client connects directly to localhost:9994,
+# bypassing the proxy. Anything other than HOST_PORT=9991 puts the host
+# forward at 9994+3 instead of 9994, breaking HMR / the webpack-WS.
 #
 # Usage: create-worktree.sh [--rebuild] <name>
 #   --rebuild   `vagrant destroy -f` this worktree's container and re-up
@@ -46,11 +45,9 @@ MAIN_WORKTREE="$WORKTREE_ROOT/$MAIN_NAME"
 ORIGIN_URL="git@github.com:amanagr/zulip.git"
 UPSTREAM_URL="git@github.com:zulip/zulip.git"
 
-PORTS_DIR="$HOME/.config/terminal-dev-setup"
-PORTS_FILE="$PORTS_DIR/worktree-ports.tsv"
 ZULIP_VAGRANT_CONFIG="$HOME/.zulip-vagrant-config"
-BASE_PORT=9991            # Matches Zulip's Vagrantfile default.
-PORT_STRIDE=10            # Vagrantfile uses host_port, +3, +4 — 10 gives slack.
+HOST_PORT=9991            # Single-active workflow — only one worktree up at
+                          # a time, all configured for the canonical port.
 MANAGED_BEGIN="# >>> managed-by: create-worktree.sh >>>"
 MANAGED_END="# <<< managed-by: create-worktree.sh <<<"
 
@@ -167,25 +164,8 @@ else
 fi
 
 
-# ---------- 5. Allocate this worktree's HOST_PORT ----------
-step "Allocate HOST_PORT for '$NAME'"
-mkdir -p "$PORTS_DIR"
-touch "$PORTS_FILE"
-PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
-if [ -z "$PORT" ]; then
-    # Next stride above the current max (or BASE_PORT if file is empty).
-    PORT=$(awk -F'\t' -v base="$BASE_PORT" -v stride="$PORT_STRIDE" '
-        BEGIN { max = base - stride }
-        $2+0 > max { max = $2+0 }
-        END { print max + stride }
-    ' "$PORTS_FILE")
-    printf '%s\t%s\n' "$NAME" "$PORT" >> "$PORTS_FILE"
-fi
-echo "$NAME → host port $PORT (dev server: http://localhost:$PORT)"
-
-
-# ---------- 6. Rewrite ~/.zulip-vagrant-config managed block ----------
-step "Pin HOST_PORT $PORT in $ZULIP_VAGRANT_CONFIG"
+# ---------- 5. Pin HOST_PORT 9991 in ~/.zulip-vagrant-config ----------
+step "Pin HOST_PORT $HOST_PORT in $ZULIP_VAGRANT_CONFIG"
 touch "$ZULIP_VAGRANT_CONFIG"
 # Strip any previous managed block, then re-append. Preserves unrelated
 # lines (e.g., HTTP_PROXY, GUEST_MEMORY_MB) the user added by hand.
@@ -196,12 +176,38 @@ awk -v b="$MANAGED_BEGIN" -v e="$MANAGED_END" '
 ' "$ZULIP_VAGRANT_CONFIG" > "$ZULIP_VAGRANT_CONFIG.new"
 cat >> "$ZULIP_VAGRANT_CONFIG.new" <<EOF
 $MANAGED_BEGIN
-# Rewritten on every \`create-worktree.sh <name>\` run. Format is
-# whitespace-separated key value — see Zulip's Vagrantfile.
-HOST_PORT $PORT
+# Single-active workflow: every worktree binds 9991 on the host.
+HOST_PORT $HOST_PORT
 $MANAGED_END
 EOF
 mv "$ZULIP_VAGRANT_CONFIG.new" "$ZULIP_VAGRANT_CONFIG"
+
+
+# ---------- 6. Halt any other worktree currently using host 9991 ----------
+# Only one container can bind 9991 at a time. If something else holds it,
+# `vagrant up` below would error with "port collision". Auto-halt it.
+step "Halt any other worktree currently bound to 9991"
+holder_cid=$(docker ps --filter "publish=$HOST_PORT" --format '{{.ID}} {{.Names}}' \
+    | awk -v me="$NAME" '$2 !~ "^"me"_default" {print $1; exit}')
+if [ -n "$holder_cid" ]; then
+    holder_name=$(docker inspect --format '{{.Name}}' "$holder_cid" | sed 's|^/||')
+    # The vagrant box name pattern is <worktree>_default_<timestamp>;
+    # extract the worktree name and invoke `vagrant halt` from that dir
+    # so vagrant's stored state stays consistent (don't just docker stop).
+    holder_worktree="${holder_name%%_default_*}"
+    holder_dir="$WORKTREE_ROOT/$holder_worktree"
+    if [ -d "$holder_dir/.vagrant" ]; then
+        echo "$holder_name has port $HOST_PORT — halting via $holder_dir"
+        ( cd "$holder_dir" && vagrant halt )
+    else
+        # No vagrant state for that worktree (manual docker run? cleaned dir?) — fall
+        # back to a plain stop, but warn so the user can investigate.
+        echo "warn: $holder_name has port $HOST_PORT but $holder_dir/.vagrant is missing — docker stop"
+        docker stop "$holder_cid" >/dev/null
+    fi
+else
+    echo "port $HOST_PORT is free"
+fi
 
 
 # ---------- 7. Optional rebuild ----------
@@ -246,7 +252,7 @@ jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
 
 # Bash setup inside the container: install claude/gh if missing, write
 # ~/.zulip-dev-env.sh, and manage the ~/.bashrc block.
-ZULIP_EXTERNAL_HOST="localhost:$PORT"
+ZULIP_EXTERNAL_HOST="localhost:$HOST_PORT"
 # shellcheck disable=SC2087  # heredoc expansion is intentional — $REPO_DIR,
 # $DIR, $ZULIP_EXTERNAL_HOST expand on the host; the inner \$HOME / \$begin
 # stay literal so they expand inside the container.
@@ -321,14 +327,14 @@ EOF
 # ---------- 10. Done ----------
 step "Done"
 cat <<EOF
-Dev server:  http://localhost:$PORT
+Dev server:  http://localhost:$HOST_PORT
 SSH in:      cd $DIR && vagrant ssh
 Halt:        cd $DIR && vagrant halt
 Destroy:     bin/create-worktree.sh --rebuild $NAME    (\`vagrant destroy -f\` + re-up)
 
-To re-up after halt:  bin/create-worktree.sh $NAME
-  (Don't \`vagrant up\` directly — \$ZULIP_VAGRANT_CONFIG may currently hold
-   a different worktree's HOST_PORT. This script rewrites it first.)
+Single-active workflow — every worktree binds host port $HOST_PORT, so only one
+can be up at a time. Switch worktrees via:
+  bin/create-worktree.sh <other>     (auto-halts whichever is currently on $HOST_PORT)
 
 Shortcuts (in a fresh shell — re-source ~/.bashrc, or just \`exec bash\`):
   zcd        cd into \$WORKTREE_DIR ($DIR)
