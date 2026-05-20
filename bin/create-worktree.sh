@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
-# create-worktree.sh — provision a Zulip dev OrbStack machine.
+# create-worktree.sh — provision a Zulip dev environment using Vagrant + Docker.
 #
-# First time with the name "zulip" sets up the canonical clone at
-# ~/work/zulip. Every other name becomes a linked `git worktree` of that
-# main clone — they share the same .git/, so branches and commits are
-# visible from every worktree.
+# First time with name "zulip" sets up the canonical clone at ~/work/zulip;
+# every other name becomes a linked `git worktree` of that main clone — they
+# share .git/, so branches/commits are visible from every worktree.
 #
-# Each worktree gets its own OrbStack Linux machine named "<name>".
-# OrbStack auto-shares your Mac home into the VM, so ~/work/<name> is
-# visible inside the machine at the same path — no synced-folder config
-# needed. Each machine has its own DNS name "<name>.orb.local"; the dev
-# server is reachable at http://<name>.orb.local:9991 with no host-port
-# allocation.
+# Each worktree gets its own Docker container managed by Vagrant. We use
+# Zulip's documented recommended setup (`vagrant up --provider=docker`),
+# which means the Vagrantfile already in the Zulip repo drives everything:
+# image build (tools/setup/dev-vagrant-docker/Dockerfile, Ubuntu 22.04 +
+# systemctl3 + the `vagrant` user) and provision (tools/setup/vagrant-provision
+# → ./tools/provision, ~10–20 min on first up). Bugs reproduce on the
+# upstream-supported config — easy to file upstream.
+#
+# Synced folders inside the container (set by Zulip's Vagrantfile):
+#   ./             → __dir__  (i.e., /Users/$USER/work/<name>; same path inside)
+#   git_common_dir → git_common_dir  (shared .git visible across worktrees)
+# So /Users/$USER/work/<name> resolves directly inside the container too.
+# The container's $HOME is /home/vagrant — a *different* path.
+#
+# Per-worktree port: Zulip's Vagrantfile reads HOST_PORT from the global
+# ~/.zulip-vagrant-config. We allocate a port per worktree (sequential,
+# stride 10 — the Vagrantfile forwards host_port, +3, +4) stored in
+# ~/.config/terminal-dev-setup/worktree-ports.tsv, then rewrite a managed
+# block in ~/.zulip-vagrant-config before every `vagrant up`. Each running
+# container's port mapping is pinned at `docker run` time, so parallel
+# worktrees coexist — but never `vagrant reload` without re-running this
+# script (the file may currently hold a different worktree's port).
 #
 # Usage: create-worktree.sh [--rebuild] <name>
-#   --rebuild   destroy this worktree's OrbStack machine and re-provision
+#   --rebuild   `vagrant destroy -f` this worktree's container and re-up
 #               (keeps the working tree and branch intact)
 #
 # Re-running with the same name resumes from wherever a previous run died.
@@ -22,7 +37,6 @@
 set -euo pipefail
 
 # ---------- Config ----------
-# cd-pwd over readlink -f for portability — macOS readlink predates -f.
 REPO_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 WORKTREE_ROOT="$HOME/work"
@@ -32,15 +46,17 @@ MAIN_WORKTREE="$WORKTREE_ROOT/$MAIN_NAME"
 ORIGIN_URL="git@github.com:amanagr/zulip.git"
 UPSTREAM_URL="git@github.com:zulip/zulip.git"
 
-# amd64 under Rosetta is within ~10% of native on Apple Silicon and
-# avoids any arm64 surprises in Zulip's provision (downloaded binaries,
-# pinned wheels). Override with ORB_ARCH=arm64 if you want native.
-ORB_IMAGE="${ORB_IMAGE:-ubuntu:24.04}"
-ORB_ARCH="${ORB_ARCH:-amd64}"
+PORTS_DIR="$HOME/.config/terminal-dev-setup"
+PORTS_FILE="$PORTS_DIR/worktree-ports.tsv"
+ZULIP_VAGRANT_CONFIG="$HOME/.zulip-vagrant-config"
+BASE_PORT=9991            # Matches Zulip's Vagrantfile default.
+PORT_STRIDE=10            # Vagrantfile uses host_port, +3, +4 — 10 gives slack.
+MANAGED_BEGIN="# >>> managed-by: create-worktree.sh >>>"
+MANAGED_END="# <<< managed-by: create-worktree.sh <<<"
 
 usage() { cat <<'EOF'
 Usage: create-worktree.sh [--rebuild] <name>
-  --rebuild   destroy this worktree's OrbStack machine and re-provision
+  --rebuild   `vagrant destroy -f` this worktree's container and re-up
               (keeps the working tree and branch intact)
 
 First time with name "zulip" sets up the canonical clone at ~/work/zulip;
@@ -63,8 +79,6 @@ for arg in "$@"; do
 done
 [ -n "$NAME" ] || { usage >&2; exit 2; }
 
-# Reserved names + shell-safe alphabet; git-check-ref-format (below, once
-# git is known to exist) catches the rest (foo.lock, foo..bar, trailing-dot, …).
 case "$NAME" in
     HEAD|head|main|.|..) echo "'$NAME' is reserved — pick a different name" >&2; exit 2 ;;
     .*|-*|*[!A-Za-z0-9._-]*)
@@ -80,20 +94,19 @@ step() { printf '\n== %s ==\n' "$*"; }
 # ---------- 1. Prereqs ----------
 step "Prerequisites"
 missing=()
-for cmd in git orb; do
+for cmd in git vagrant docker jq; do
     command -v "$cmd" >/dev/null || missing+=("$cmd")
 done
 [ ${#missing[@]} -eq 0 ] || {
-    echo "Missing: ${missing[*]} — see ../CLAUDE.md for install hints" >&2; exit 1
+    echo "Missing: ${missing[*]} — see ../host/CLAUDE.md for install hints" >&2; exit 1
 }
 git check-ref-format "refs/heads/$NAME" 2>/dev/null || {
     echo "'$NAME' is not a legal git branch name" >&2; exit 2
 }
-# OrbStack daemon reachable? Trust the exit code rather than grepping the
-# output line — future sub-states like "Running (degraded)" would still
-# be usable but would fail an exact "Running" string match.
-orb status >/dev/null 2>&1 || {
-    echo "OrbStack isn't running — launch OrbStack.app and retry" >&2; exit 1
+# `docker version` exits non-zero if the daemon isn't reachable (Docker
+# Desktop not running) — exit code is what matters, not parsing output.
+docker version >/dev/null 2>&1 || {
+    echo "Docker daemon isn't reachable — launch Docker Desktop and retry" >&2; exit 1
 }
 echo "ok"
 
@@ -121,22 +134,24 @@ git -C "$MAIN_WORKTREE" fetch upstream
 # ---------- 4. Worktree ----------
 if [ "$NAME" = "$MAIN_NAME" ]; then
     step "Fast-forward main in $MAIN_WORKTREE"
-    # Don't use `checkout main || checkout -B main upstream/main` — a dirty-tree
-    # checkout also exits 1, and the fallback's -B would force-reset local main
-    # and silently discard unpushed commits.
-    if git -C "$MAIN_WORKTREE" show-ref --verify --quiet refs/heads/main; then
+    # Skip the refresh if the worktree is dirty or in detached HEAD — don't
+    # risk discarding user work-in-progress. The container build below still
+    # runs; only the upstream catch-up is skipped.
+    branch=$(git -C "$MAIN_WORKTREE" symbolic-ref --short -q HEAD || true)
+    if [ -z "$branch" ] \
+            || ! git -C "$MAIN_WORKTREE" diff --quiet HEAD \
+            || ! git -C "$MAIN_WORKTREE" diff --staged --quiet; then
+        echo "skipped — $MAIN_WORKTREE has uncommitted changes or is in detached HEAD"
+        echo "        commit/stash and re-run to refresh main from upstream"
+    elif git -C "$MAIN_WORKTREE" show-ref --verify --quiet refs/heads/main; then
         git -C "$MAIN_WORKTREE" checkout main
+        git -C "$MAIN_WORKTREE" pull --ff-only upstream main
     else
         git -C "$MAIN_WORKTREE" checkout -b main upstream/main
+        git -C "$MAIN_WORKTREE" pull --ff-only upstream main
     fi
-    # pull --ff-only refuses on unpushed commits or a conflicting dirty tree.
-    git -C "$MAIN_WORKTREE" pull --ff-only upstream main
 else
     step "Add linked worktree $DIR on branch $NAME"
-    # Prune first so a worktree dir that was `rm -rf`d (without a proper
-    # `git worktree remove`) doesn't keep its stale porcelain entry,
-    # which would fool the next `grep -Fxq` into thinking the worktree
-    # still exists.
     git -C "$MAIN_WORKTREE" worktree prune
     if git -C "$MAIN_WORKTREE" worktree list --porcelain | grep -Fxq "worktree $DIR" \
             && [ -d "$DIR" ]; then
@@ -152,151 +167,165 @@ else
 fi
 
 
-# ---------- 5. Optional rebuild ----------
+# ---------- 5. Allocate this worktree's HOST_PORT ----------
+step "Allocate HOST_PORT for '$NAME'"
+mkdir -p "$PORTS_DIR"
+touch "$PORTS_FILE"
+PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
+if [ -z "$PORT" ]; then
+    # Next stride above the current max (or BASE_PORT if file is empty).
+    PORT=$(awk -F'\t' -v base="$BASE_PORT" -v stride="$PORT_STRIDE" '
+        BEGIN { max = base - stride }
+        $2+0 > max { max = $2+0 }
+        END { print max + stride }
+    ' "$PORTS_FILE")
+    printf '%s\t%s\n' "$NAME" "$PORT" >> "$PORTS_FILE"
+fi
+echo "$NAME → host port $PORT (dev server: http://localhost:$PORT)"
+
+
+# ---------- 6. Rewrite ~/.zulip-vagrant-config managed block ----------
+step "Pin HOST_PORT $PORT in $ZULIP_VAGRANT_CONFIG"
+touch "$ZULIP_VAGRANT_CONFIG"
+# Strip any previous managed block, then re-append. Preserves unrelated
+# lines (e.g., HTTP_PROXY, GUEST_MEMORY_MB) the user added by hand.
+awk -v b="$MANAGED_BEGIN" -v e="$MANAGED_END" '
+    $0==b { skip=1; next }
+    $0==e { skip=0; next }
+    !skip { print }
+' "$ZULIP_VAGRANT_CONFIG" > "$ZULIP_VAGRANT_CONFIG.new"
+cat >> "$ZULIP_VAGRANT_CONFIG.new" <<EOF
+$MANAGED_BEGIN
+# Rewritten on every \`create-worktree.sh <name>\` run. Format is
+# whitespace-separated key value — see Zulip's Vagrantfile.
+HOST_PORT $PORT
+$MANAGED_END
+EOF
+mv "$ZULIP_VAGRANT_CONFIG.new" "$ZULIP_VAGRANT_CONFIG"
+
+
+# ---------- 7. Optional rebuild ----------
 if [ "$REBUILD" = 1 ]; then
-    step "Rebuild requested — destroying OrbStack machine '$NAME'"
-    if orb info "$NAME" >/dev/null 2>&1; then
-        orb delete -f "$NAME"
+    step "Rebuild requested — \`vagrant destroy -f\` in $DIR"
+    if [ -d "$DIR/.vagrant" ]; then
+        ( cd "$DIR" && vagrant destroy -f )
+    else
+        echo "no existing Vagrant state to destroy"
     fi
 fi
 
 
-# ---------- 6. Create OrbStack machine ----------
-step "Create OrbStack machine '$NAME' ($ORB_IMAGE, $ORB_ARCH)"
-if orb info "$NAME" >/dev/null 2>&1; then
-    echo "already exists"
-else
-    orb create -a "$ORB_ARCH" "$ORB_IMAGE" "$NAME"
-fi
+# ---------- 8. Bring the container up (image build + Zulip provision) ----------
+step "vagrant up --provider=docker in $DIR"
+# First run: builds the Ubuntu 22.04 image (Zulip's Dockerfile) and runs
+# tools/setup/vagrant-provision → ./tools/provision (~10–20 min, downloads
+# every Zulip dependency). Re-runs are no-ops if already up.
+( cd "$DIR" && vagrant up --provider=docker )
 
 
-# ---------- 7. Provision the VM ----------
-# Ship claude settings, bash aliases, and an env file pinning EXTERNAL_HOST.
-# Without EXTERNAL_HOST, Zulip's dev_settings.py routes non-localhost hosts
-# to the marketing landing page. OrbStack's per-machine DNS name is the
-# stable address; using that means parallel worktrees don't fight over the
-# localhost:9991 port forward.
-step "Provision the VM"
-ZULIP_EXTERNAL_HOST="$NAME.orb.local:9991"
+# ---------- 9. Post-up provisioning (claude, gh, aliases, env, bashrc) ----------
+step "Install claude/gh + drop aliases & claude settings into the container"
 
-# orb -m runs as your Mac user inside the VM (passwordless sudo, configured
-# automatically by OrbStack). Mac files mount at the same paths inside the
-# machine, so $REPO_DIR resolves directly. $DIR is the Mac-side path
-# (e.g. /Users/aman/work/<name>); inside the VM it resolves to the same
-# location via OrbStack's home mount — VM-native $HOME is /home/<user>,
-# which is a *different* path and does not contain the worktree.
-orb -m "$NAME" bash <<EOF
-    set -euo pipefail
-
+# vagrant upload doesn't auto-create parent dirs; mkdir first.
+( cd "$DIR" && vagrant ssh --no-tty -c "
     mkdir -p \$HOME/.claude \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
-    install -m 0644 "$REPO_DIR/vm/bash-aliases.sh"      \$HOME/.config/terminal-dev-setup/aliases.sh
+" )
 
-    # OrbStack's Ubuntu 24.04 base image is minimal — no git, no curl, no jq.
-    # git/curl are used immediately below (git config, curl for the claude
-    # installer and the gh keyring). jq strips the host-only \`hooks\` block
-    # out of host/claude-settings.json before installing it as the VM's
-    # ~/.claude/settings.json — the hook commands point at host scripts
-    # (\$HOME/.local/bin/claude-tmux-state.sh, claude-notify.sh) that don't
-    # exist on the VM and don't make sense headless. Zulip's own
-    # ./tools/provision installs git later but that runs *after* this script,
-    # so install the essentials up front.
-    if ! command -v git >/dev/null || ! command -v curl >/dev/null || ! command -v jq >/dev/null; then
+# Aliases (verbatim from vm/bash-aliases.sh).
+( cd "$DIR" && vagrant upload \
+    "$REPO_DIR/vm/bash-aliases.sh" \
+    /home/vagrant/.config/terminal-dev-setup/aliases.sh )
+
+# Claude settings: single source of truth is host/claude-settings.json;
+# strip the `hooks` block (those reference ~/.local/bin/claude-*.sh scripts
+# that don't exist headless and don't make sense without a desktop session).
+filtered_settings=$(mktemp -t claude-settings.json.XXXXXX)
+trap 'rm -f "$filtered_settings"' EXIT
+jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
+( cd "$DIR" && vagrant upload "$filtered_settings" /home/vagrant/.claude/settings.json )
+
+# Bash setup inside the container: install claude/gh if missing, write
+# ~/.zulip-dev-env.sh, and manage the ~/.bashrc block.
+ZULIP_EXTERNAL_HOST="localhost:$PORT"
+# shellcheck disable=SC2087  # heredoc expansion is intentional — $REPO_DIR,
+# $DIR, $ZULIP_EXTERNAL_HOST expand on the host; the inner \$HOME / \$begin
+# stay literal so they expand inside the container.
+( cd "$DIR" && vagrant ssh --no-tty -c "bash -s" ) <<EOF
+set -euo pipefail
+
+# Zulip's provision installs git/curl/jq; verify they're present before
+# we lean on them. vagrant-provision has already run by now, so these
+# should all be there from Zulip's own ./tools/provision.
+for cmd in git curl jq; do
+    command -v "\$cmd" >/dev/null || {
+        echo "warn: \$cmd missing in container — Zulip provision should have installed it" >&2
+    }
+done
+
+git config --global core.editor vim
+
+if ! command -v claude >/dev/null; then
+    curl -fsSL https://claude.ai/install.sh | bash
+fi
+
+# gh: GitHub CLI via the official apt repo, idempotent.
+if ! command -v gh >/dev/null 2>&1; then
+    (
+        sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
+        gh_tmp=\$(mktemp -d) && trap 'rm -rf "\$gh_tmp"' EXIT
+        curl -fsSL -o "\$gh_tmp/keyring.gpg" \\
+            https://cli.github.com/packages/githubcli-archive-keyring.gpg
+        sudo install -m 0644 -o root -g root \\
+            "\$gh_tmp/keyring.gpg" /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        arch=\$(dpkg --print-architecture)
+        echo "deb [arch=\$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+            | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
         sudo apt-get update -qq
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \\
-            git curl ca-certificates jq
-    fi
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
+    )
+fi
 
-    # Single source of truth for claude settings is host/claude-settings.json;
-    # the VM gets the same file with \`hooks\` removed.
-    jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" \\
-        > \$HOME/.claude/settings.json
-
-    # Default editor for git commit messages, rebases, etc.
-    git config --global core.editor vim
-
-    if ! command -v claude >/dev/null; then
-        # \`curl -f\` catches HTTP ≥400; the heredoc's set -o pipefail
-        # propagates a curl exit-on-disconnect into bash so a partial
-        # script doesn't run to completion. (Pipefail doesn't *prevent*
-        # bash from executing the bytes it already received before
-        # curl errors — for a hard transactional guarantee, download
-        # to a temp file and \`bash file\` it; that's overkill here.)
-        curl -fsSL https://claude.ai/install.sh | bash
-    fi
-
-    # gh: GitHub CLI via the official apt repo. Idempotent — apt-add is a
-    # write-the-same-file pattern, and apt-get install on an up-to-date
-    # package is a no-op. Keyring under /etc/apt/keyrings per current
-    # Debian guidance (apt-key is deprecated since Ubuntu 22.04).
-    if ! command -v gh >/dev/null 2>&1; then
-        (
-            sudo mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d
-            # Download to a tempfile first, then sudo install — same
-            # pattern upstream gh docs use (they call wget -O \$out then
-            # cat | sudo tee). A streamed \`curl … | sudo tee\` would
-            # write a partial keyring file before pipefail caught a
-            # mid-transfer curl failure, leaving apt-get update to
-            # complain about a bad signature on the next run.
-            gh_tmp=\$(mktemp -d) && trap 'rm -rf "\$gh_tmp"' EXIT
-            curl -fsSL -o "\$gh_tmp/keyring.gpg" \\
-                https://cli.github.com/packages/githubcli-archive-keyring.gpg
-            sudo install -m 0644 -o root -g root \\
-                "\$gh_tmp/keyring.gpg" /etc/apt/keyrings/githubcli-archive-keyring.gpg
-            arch=\$(dpkg --print-architecture)
-            echo "deb [arch=\$arch signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
-                | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gh
-        )
-    fi
-
-    # Quote the RHS so a future $DIR or $ZULIP_EXTERNAL_HOST containing
-    # spaces survives the source. The script already rejects whitespace
-    # in $NAME (line 70 regex), so this is purely defensive — but cheap.
-    cat > \$HOME/.zulip-dev-env.sh <<ENV
+cat > \$HOME/.zulip-dev-env.sh <<ENV
 export EXTERNAL_HOST="$ZULIP_EXTERNAL_HOST"
 export WORKTREE_DIR="$DIR"
 ENV
 
-    # Rewrite the managed block between begin/end markers on every run so
-    # existing VMs pick up newly-added source lines without manual edits.
-    begin="# >>> managed-by: create-worktree.sh >>>"
-    end="# <<< managed-by: create-worktree.sh <<<"
-    touch ~/.bashrc
-    # Strip the legacy single-line marker + its source line from earlier
-    # script versions (pre-begin/end block). Safe no-op if absent.
-    sed -i.bak '/^# managed-by: create-worktree\.sh\$/,+1d' ~/.bashrc \\
-        && rm -f ~/.bashrc.bak
-    if grep -Fq "\$begin" ~/.bashrc; then
-        # sed -i with a backup suffix works on both GNU and BSD sed; we're
-        # in GNU-sed land here but the form is harmlessly portable.
-        sed -i.bak "/\$begin/,/\$end/d" ~/.bashrc && rm -f ~/.bashrc.bak
-    fi
-    cat >> ~/.bashrc <<BASHRC
+touch ~/.bashrc
+# Strip any prior managed block, then re-append. Single-quoted sed pattern
+# so the literal markers don't tangle with shell expansion.
+sed -i.bak '/# >>> managed-by: create-worktree.sh >>>/,/# <<< managed-by: create-worktree.sh <<</d' ~/.bashrc
+rm -f ~/.bashrc.bak
 
-\$begin
+# Single-quoted heredoc tag — body is written literally to ~/.bashrc, so
+# \$WORKTREE_DIR stays a deferred reference (resolved when ~/.bashrc is
+# sourced in a fresh shell, after ~/.zulip-dev-env.sh has set it).
+cat >> ~/.bashrc <<'BASHRC'
+
+# >>> managed-by: create-worktree.sh >>>
 source ~/.zulip-dev-env.sh
 [ -f ~/.config/terminal-dev-setup/aliases.sh ] && source ~/.config/terminal-dev-setup/aliases.sh
 # Auto-activate Zulip's Python venv. Guarded so a shell opened before
-# ./tools/provision has created the venv still works.
+# the venv exists still works.
 [ -f "\$WORKTREE_DIR/.venv/bin/activate" ] && source "\$WORKTREE_DIR/.venv/bin/activate"
-\$end
+# <<< managed-by: create-worktree.sh <<<
 BASHRC
 EOF
 
 
-# ---------- 8. Done ----------
+# ---------- 10. Done ----------
 step "Done"
 cat <<EOF
-Dev server:  http://$ZULIP_EXTERNAL_HOST
-SSH in:      orb -m $NAME
-First time:  cd $DIR && ./tools/provision     # ~10–20 min
-Each run:    cd $DIR && ./tools/run-dev --interface=''
-             (--interface='' makes run-dev bind to all VM interfaces;
-              without it, $NAME.orb.local is unreachable from the host)
+Dev server:  http://localhost:$PORT
+SSH in:      cd $DIR && vagrant ssh
+Halt:        cd $DIR && vagrant halt
+Destroy:     bin/create-worktree.sh --rebuild $NAME    (\`vagrant destroy -f\` + re-up)
+
+To re-up after halt:  bin/create-worktree.sh $NAME
+  (Don't \`vagrant up\` directly — \$ZULIP_VAGRANT_CONFIG may currently hold
+   a different worktree's HOST_PORT. This script rewrites it first.)
 
 Shortcuts (in a fresh shell — re-source ~/.bashrc, or just \`exec bash\`):
   zcd        cd into \$WORKTREE_DIR ($DIR)
-  run        ./tools/run-dev --interface=  (the empty-interface form above)
+  run        ./tools/run-dev --interface=  (binds to all interfaces in the container)
   v / vi     vim (default Ubuntu vim; git core.editor is also vim)
 EOF

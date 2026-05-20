@@ -1,8 +1,8 @@
 # =============================================================================
 # terminal-dev-setup VM aliases — sourced from ~/.bashrc.
 # Slim bash port of host/zsh-aliases.zsh: only the bits that make sense
-# inside a headless OrbStack VM (git, editor, zulip helpers). No tmux,
-# starship, fzf, transmission, ghostty, pdf — those are host-only.
+# inside a headless Vagrant+Docker container (git, editor, zulip helpers).
+# No tmux, starship, fzf, transmission, ghostty, pdf — those are host-only.
 # =============================================================================
 
 # --- Editor ---
@@ -72,13 +72,15 @@ fi
 
 # --- Zulip helpers ---
 # $WORKTREE_DIR is exported by ~/.zulip-dev-env.sh (written by
-# create-worktree.sh) and points at /Users/<you>/work/<vm-name>.
+# create-worktree.sh) and points at /Users/<you>/work/<worktree-name>.
+# Zulip's Vagrantfile bind-mounts the worktree at the same Mac path
+# inside the container, so this absolute Mac path resolves directly.
 if [ -n "${WORKTREE_DIR:-}" ]; then
     alias zcd='cd "$WORKTREE_DIR"'
 fi
 # `--interface=` (empty) is required: without it, run-dev binds 127.0.0.1
-# inside the VM and the <name>.orb.local address is unreachable. See
-# vm/CLAUDE.md.
+# inside the container and Vagrant's host port forward can't reach it.
+# See vm/CLAUDE.md.
 alias run='./tools/run-dev --interface='
 
 zlint() {
