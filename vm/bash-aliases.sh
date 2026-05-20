@@ -87,5 +87,13 @@ zlint() {
     ( cd "${WORKTREE_DIR:-.}" && ./tools/lint --modified )
 }
 
+# Cherry-pick the local Zulip HMR fix onto the current branch — enables
+# webpack hot-reload on non-9991 worktrees. The patch lives on branch
+# `fix-webpack-client-port-for-non-default-host-port` in the shared .git
+# common dir (added by ../bin/create-worktree.sh setup); see vm/CLAUDE.md
+# §"Webpack HMR on non-9991 worktrees" for the rationale. Remove once
+# the change lands upstream.
+alias live-update='git cherry-pick fix-webpack-client-port-for-non-default-host-port'
+
 # --- Paths ---
 export PATH="$HOME/.local/bin:$PATH"

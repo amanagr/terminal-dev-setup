@@ -115,6 +115,7 @@ Full list in [`bash-aliases.sh`](./bash-aliases.sh). The non-obvious ones:
 | `zcd`      | `cd $WORKTREE_DIR` |
 | `run`      | `./tools/run-dev --interface=` (the empty-interface form) |
 | `zlint`    | `cd $WORKTREE_DIR && ./tools/lint --modified` |
+| `live-update` | `git cherry-pick fix-webpack-client-port-for-non-default-host-port` — pulls the HMR fix onto the current branch (see §"Webpack HMR on non-9991 worktrees") |
 | `g`, `gs`, `gd`, `gl`, `gla`, `gco`, `gcb`, … | usual git shortcuts (mirrors host) |
 | `gshow`, `glf`, `gls`, `ggrep`, `gfix`, `gdiverg` | git helper functions |
 | `v` / `vi` | `vim` |
