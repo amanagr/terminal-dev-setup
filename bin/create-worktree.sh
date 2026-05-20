@@ -277,6 +277,9 @@ ENV
 \$begin
 source ~/.zulip-dev-env.sh
 [ -f ~/.config/terminal-dev-setup/aliases.sh ] && source ~/.config/terminal-dev-setup/aliases.sh
+# Auto-activate Zulip's Python venv. Guarded so a shell opened before
+# ./tools/provision has created the venv still works.
+[ -f "\$WORKTREE_DIR/.venv/bin/activate" ] && source "\$WORKTREE_DIR/.venv/bin/activate"
 \$end
 BASHRC
 EOF
