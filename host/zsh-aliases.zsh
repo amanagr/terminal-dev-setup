@@ -190,6 +190,13 @@ zlint() {
     ( cd "$HOME/work/zulip" && ./tools/lint --modified )
 }
 
+# Cherry-pick the local Zulip HMR fix onto the current branch — enables
+# webpack hot-reload on non-9991 worktrees. Mirrors the same alias in
+# vm/bash-aliases.sh so it's reachable from both VSCode's terminal on
+# the host and `vagrant ssh` inside a container. Remove once the fix
+# lands upstream.
+alias live-update='git cherry-pick fix-webpack-client-port-for-non-default-host-port'
+
 # --- Paths ---
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 # Only prepend npm's global bin if npm is installed — otherwise an empty
