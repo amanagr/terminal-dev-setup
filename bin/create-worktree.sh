@@ -184,20 +184,25 @@ LOCK_WAIT_MAX=120  # seconds before bailing on a stuck lock
 # both EEXIST (lock taken) AND any other I/O error (missing parent dir,
 # read-only fs, ENOSPC). Without this check the wait loop would spin
 # 120 s on those cases, claiming "another create-worktree.sh is running".
+# The `||` block fires the error: `[ ... ] && [ ... ]` returning false
+# is safe under `set -e` because we're on the LHS of `||`.
 lock_parent=$(dirname "$LOCK_FILE")
 [ -d "$lock_parent" ] && [ -w "$lock_parent" ] || {
     echo "create-worktree.sh: lock dir $lock_parent is missing or unwritable" >&2
     exit 1
 }
-# Cleanup trap on EXIT + the three common-interrupt signals. SIGKILL is
-# uncatchable per POSIX; the stale-PID reclaim below handles that case.
-# `rm -f` (not `rmdir`) — the lock is a file.
-trap 'rm -f "$LOCK_FILE"' EXIT INT TERM HUP
 # umask narrows the lock to user-only (0600) so the /tmp fallback case
 # can't be DoS'd by a hostile co-user writing their own PID into it.
-# XDG_RUNTIME_DIR is already 0700; this is defense-in-depth.
-old_umask=$(umask)
+# XDG_RUNTIME_DIR is already 0700; this is defense-in-depth. `umask -p`
+# emits "umask 0022" form designed to be re-evaluated; round-trips
+# cleanly even if the user has POSIX symbolic-umask mode set.
+old_umask=$(umask -p)
 umask 077
+# Cleanup trap on EXIT + the three common-interrupt signals. SIGKILL is
+# uncatchable per POSIX; the stale-PID reclaim below handles that case.
+# `rm -f` (not `rmdir`) — the lock is a file. Restore umask too in case
+# we bail on LOCK_WAIT_MAX before reaching the post-loop restore.
+trap 'rm -f "$LOCK_FILE"; eval "$old_umask" 2>/dev/null || true' EXIT INT TERM HUP
 waited=0
 while ! ( set -C; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; do
     # Try to reclaim an orphaned lock: if the file's PID points at a
@@ -231,7 +236,7 @@ while ! ( set -C; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; do
     sleep 1
     waited=$((waited + 1))
 done
-umask "$old_umask"
+eval "$old_umask"
 
 touch "$PORTS_FILE"
 PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
