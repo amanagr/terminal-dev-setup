@@ -25,8 +25,8 @@ After every change to a tracked file:
 - **Host (macOS)**: read [`host/CLAUDE.md`](./host/CLAUDE.md) — it's a linear
   recipe: install Homebrew, run the `brew install` block, deploy the configs.
 - **VM**: install Docker Desktop, Vagrant, plus `git` and `jq` for the
-  script's prereq check (`brew install vagrant git jq` +
-  `brew install --cask docker-desktop`). Then `bin/create-worktree.sh <name>`:
+  script's prereq check (`brew install git jq` +
+  `brew install --cask vagrant docker-desktop`). Then `bin/create-worktree.sh <name>`:
   on first invocation clones the canonical `~/work/zulip` repo, then adds a
   linked `git worktree` for the given name, brings up a Vagrant-managed
   Docker container, and runs Zulip's full `./tools/provision` automatically

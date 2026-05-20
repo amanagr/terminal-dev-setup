@@ -171,38 +171,46 @@ fi
 # Both steps share a lock so two concurrent invocations don't:
 #  - both read max=9991 from an empty tsv and assign the same next port, or
 #  - both write the global config with different HOST_PORTs and clobber each other.
-# macOS doesn't ship flock(1), so we use a mkdir-based lock (atomic per POSIX).
+# macOS doesn't ship flock(1). Use a noclobber lockfile: `set -C; echo $$ > FILE`
+# atomically creates the file with our PID as content, or fails if it exists.
+# (mkdir-then-write-pid races: the file would exist for a moment with no pid.)
 # The lock sits under XDG_RUNTIME_DIR (or /tmp on macOS, which has no
 # XDG_RUNTIME_DIR) — transient location that survives `rm -rf $PORTS_DIR`.
 step "Allocate HOST_PORT for '$NAME' (lock-guarded)"
 mkdir -p "$PORTS_DIR"
-LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/create-worktree.$UID.lock"
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/create-worktree.$UID.lock"
 LOCK_WAIT_MAX=120  # seconds before bailing on a stuck lock
-# Install the cleanup trap BEFORE we may acquire the lock — and re-set the
-# same trap whenever we touch any other state. Covers EXIT (normal & errored)
-# plus the three common-interrupt signals. SIGKILL is uncatchable per POSIX;
-# the stale-PID reclaim below handles that case.
-trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM HUP
+# Cleanup trap on EXIT + the three common-interrupt signals. SIGKILL is
+# uncatchable per POSIX; the stale-PID reclaim below handles that case.
+# `rm -f` (not `rmdir`) — the lock is a file.
+trap 'rm -f "$LOCK_FILE"' EXIT INT TERM HUP
 waited=0
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    # Try to reclaim a stale lock: if the PID file says a process that no
-    # longer exists, the lock is orphaned (kill -9 / OOM / hard reboot).
-    if [ -f "$LOCK_DIR/pid" ] \
-            && ! kill -0 "$(cat "$LOCK_DIR/pid" 2>/dev/null)" 2>/dev/null; then
-        echo "stale lock from PID $(cat "$LOCK_DIR/pid" 2>/dev/null) — reclaiming"
-        rm -rf "$LOCK_DIR"
+while ! ( set -C; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; do
+    # Try to reclaim an orphaned lock: if the file's PID points at a
+    # process that no longer exists, it's stale (kill -9 / OOM / hard
+    # reboot). Read once into a variable so an in-flight rewrite by a
+    # racer can't shift the value between check and message.
+    holder_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+    if [ -n "$holder_pid" ] && ! kill -0 "$holder_pid" 2>/dev/null; then
+        echo "stale lock from PID $holder_pid — reclaiming"
+        # Re-verify after delete: if a fresh acquirer raced in between
+        # our read and our delete, their lock's PID differs from $holder_pid.
+        # Don't delete what we didn't validate.
+        current=$(cat "$LOCK_FILE" 2>/dev/null || true)
+        if [ "$current" = "$holder_pid" ]; then
+            rm -f "$LOCK_FILE"
+        fi
         continue
     fi
     if [ "$waited" -ge "$LOCK_WAIT_MAX" ]; then
-        echo "create-worktree.sh: $LOCK_DIR held for >${LOCK_WAIT_MAX}s — bailing." >&2
-        echo "If you're sure no other run is active, \`rm -rf $LOCK_DIR\` and retry." >&2
+        echo "create-worktree.sh: $LOCK_FILE held for >${LOCK_WAIT_MAX}s — bailing." >&2
+        echo "If you're sure no other run is active, \`rm -f $LOCK_FILE\` and retry." >&2
         exit 1
     fi
     echo "another create-worktree.sh is running — waiting (${waited}s/${LOCK_WAIT_MAX}s)…"
     sleep 1
     waited=$((waited + 1))
 done
-echo "$$" > "$LOCK_DIR/pid"
 
 touch "$PORTS_FILE"
 PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
@@ -236,6 +244,17 @@ HOST_PORT $PORT
 $MANAGED_END
 EOF
 mv "$ZULIP_VAGRANT_CONFIG.new" "$ZULIP_VAGRANT_CONFIG"
+
+# Release the lock now — the shared state (worktree-ports.tsv +
+# ~/.zulip-vagrant-config) is consistent. Holding it across `vagrant up`'s
+# 10–20 min runtime would force every concurrent invocation to bail on
+# LOCK_WAIT_MAX. There's a small race window: a sibling could rewrite
+# ~/.zulip-vagrant-config with its own HOST_PORT while our `vagrant up`
+# hasn't yet `docker run`-ed its container. In practice Vagrant reads
+# the file once early in its run and the docker port-mapping is pinned
+# at create-container time, so this is a sub-second window.
+rm -f "$LOCK_FILE"
+trap - EXIT INT TERM HUP
 
 
 # ---------- 7. Optional rebuild ----------
@@ -279,7 +298,7 @@ step "Install claude/gh + drop aliases & claude settings into the container"
 # `mktemp -t prefix` on BSD/macOS is a different command (the prefix is just
 # a string, not a template) — explicit `prefix.XXXXXX` template is portable.
 filtered_settings=
-trap 'rm -f "${filtered_settings:-}"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM HUP
+trap 'rm -f "${filtered_settings:-}"' EXIT INT TERM HUP
 filtered_settings=$(mktemp "${TMPDIR:-/tmp}/claude-settings.json.XXXXXX")
 jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
 ( cd "$DIR" && vagrant upload "$filtered_settings" /home/vagrant/.claude/settings.json )
@@ -338,6 +357,10 @@ fi
 # Outer EOF already expanded \$ZULIP_EXTERNAL_HOST / \$DIR on the host.
 # Quote the inner tag so the container's bash treats the body literally and
 # we don't accidentally re-expand any \$FOO that a future edit might add.
+# Heredoc-quoting trap: if you want to write a \$RUNTIME_VAR to the file
+# that should be expanded each time ~/.zulip-dev-env.sh is sourced, you
+# can't add it here — the quoted heredoc preserves \$ literally. Either
+# concatenate a separate unquoted heredoc or use printf with \\\$.
 cat > \$HOME/.zulip-dev-env.sh <<'ENV'
 export EXTERNAL_HOST="$ZULIP_EXTERNAL_HOST"
 export WORKTREE_DIR="$DIR"

@@ -37,14 +37,23 @@ gshow() {
 glf() { git log --oneline --stat -"${1:-10}"; }
 
 # Search git log messages.
-gls() { git log --oneline --all --grep="${1:?usage: gls <pattern>}"; }
+# `${1:?}` is avoided here for the same reason as zlint — it exits the
+# *shell* (not just the function) in non-interactive sourcers.
+gls() {
+    [ -n "${1:-}" ] || { echo "usage: gls <pattern>" >&2; return 1; }
+    git log --oneline --all --grep="$1"
+}
 
 # Search code across git history (pickaxe).
-ggrep() { git log --oneline -S "${1:?usage: ggrep <string> [path]}" -- "${2:-.}"; }
+ggrep() {
+    [ -n "${1:-}" ] || { echo "usage: ggrep <string> [path]" >&2; return 1; }
+    git log --oneline -S "$1" -- "${2:-.}"
+}
 
 # Fixup a commit and auto-squash it in one step.
 gfix() {
-    git commit --fixup="${1:?usage: gfix <commit-ish>}" \
+    [ -n "${1:-}" ] || { echo "usage: gfix <commit-ish>" >&2; return 1; }
+    git commit --fixup="$1" \
         && GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash "$1"~1
 }
 
