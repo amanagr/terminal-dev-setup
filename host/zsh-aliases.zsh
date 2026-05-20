@@ -201,8 +201,11 @@ zlint() {
 # cherry-picking an already-merged commit).
 live-update() {
     local ref=fix-webpack-client-port-for-non-default-host-port
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-        || { echo "live-update: not in a git repo" >&2; return 1 }
+    # `git rev-parse --is-inside-work-tree` prints "true"/"false" and exits 0
+    # in both cases (only errors when outside a repo). Inside .git/ or a bare
+    # repo it prints "false" with exit 0 — check stdout, not just exit code.
+    [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] \
+        || { echo "live-update: not in a git worktree" >&2; return 1 }
     git rev-parse --verify --quiet "$ref" >/dev/null \
         || { echo "live-update: branch '$ref' missing; see vm/CLAUDE.md §Webpack HMR" >&2; return 1 }
     if git merge-base --is-ancestor "$ref" HEAD; then

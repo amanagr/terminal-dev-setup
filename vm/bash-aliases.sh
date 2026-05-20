@@ -37,14 +37,14 @@ gshow() {
 glf() { git log --oneline --stat -"${1:-10}"; }
 
 # Search git log messages.
-gls() { git log --oneline --all --grep="$1"; }
+gls() { git log --oneline --all --grep="${1:?usage: gls <pattern>}"; }
 
 # Search code across git history (pickaxe).
-ggrep() { git log --oneline -S "$1" -- "${2:-.}"; }
+ggrep() { git log --oneline -S "${1:?usage: ggrep <string> [path]}" -- "${2:-.}"; }
 
 # Fixup a commit and auto-squash it in one step.
 gfix() {
-    git commit --fixup="$1" \
+    git commit --fixup="${1:?usage: gfix <commit-ish>}" \
         && GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash "$1"~1
 }
 
@@ -86,7 +86,12 @@ fi
 alias run='./tools/run-dev --interface='
 
 zlint() {
-    : "${WORKTREE_DIR:?set WORKTREE_DIR or source ~/.zulip-dev-env.sh first}"
+    # Explicit check — ${VAR:?msg} would exit the *shell* in non-interactive
+    # contexts, not just return 1 from the function.
+    [ -n "${WORKTREE_DIR:-}" ] || {
+        echo "zlint: set WORKTREE_DIR or source ~/.zulip-dev-env.sh first" >&2
+        return 1
+    }
     ( cd "$WORKTREE_DIR" && ./tools/lint --modified )
 }
 
@@ -102,8 +107,12 @@ zlint() {
 # cherry-picking an already-merged commit).
 live-update() {
     local ref=fix-webpack-client-port-for-non-default-host-port
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-        || { echo "live-update: not in a git repo" >&2; return 1; }
+    # `git rev-parse --is-inside-work-tree` prints "true"/"false" and exits 0
+    # in both cases (only errors when outside a repo). Inside .git/ or a bare
+    # repo it prints "false" with exit 0 — checking the exit alone passes
+    # incorrectly. Check the stdout instead.
+    [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] \
+        || { echo "live-update: not in a git worktree" >&2; return 1; }
     git rev-parse --verify --quiet "$ref" >/dev/null \
         || { echo "live-update: branch '$ref' missing; see vm/CLAUDE.md §Webpack HMR" >&2; return 1; }
     if git merge-base --is-ancestor "$ref" HEAD; then

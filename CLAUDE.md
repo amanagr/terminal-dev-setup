@@ -7,7 +7,7 @@ in this repo so they can stay in sync without juggling branches.
 | --------- | ------------------ | ------------ |
 | [`host/`](./host/) | **macOS** (Apple Silicon, primary) — also works on modern Linux | tmux + zsh/oh-my-zsh + starship + ghostty + slim nvim (themes/visual only — VSCode is the primary host editor) + claude with tmux-integrated hooks |
 | [`vm/`](./vm/)     | **Ubuntu 22.04 in a Vagrant-managed Docker container** (matches Zulip's recommended dev setup verbatim) | claude (plan mode) + bash aliases (no nvim — default `vim` for in-VM edits, VSCode on host for real editing) |
-| [`bin/create-worktree.sh`](./bin/create-worktree.sh) | host → container bridge | per-worktree Docker container via `vagrant up --provider=docker`; uploads `vm/bash-aliases.sh` and the host's `claude-settings.json` (hooks stripped) into it |
+| [`bin/create-worktree.sh`](./bin/create-worktree.sh) | host → container bridge | per-worktree Docker container via `vagrant up --provider=docker`; uploads `vm/bash-aliases.sh` and the host's `claude-settings.json` (hooks stripped), installs `claude` + `gh`, and writes a managed `~/.bashrc` block inside the container |
 
 Each subdirectory has its own `CLAUDE.md` with deploy paths and workflow notes.
 
@@ -24,11 +24,13 @@ After every change to a tracked file:
 
 - **Host (macOS)**: read [`host/CLAUDE.md`](./host/CLAUDE.md) — it's a linear
   recipe: install Homebrew, run the `brew install` block, deploy the configs.
-- **VM**: install Docker Desktop and Vagrant (`brew install vagrant` +
-  `brew install --cask docker-desktop`), then `bin/create-worktree.sh <name>` creates
-  a fresh Zulip clone + a Vagrant-managed Docker container, runs Zulip's full
-  `./tools/provision` automatically (10–20 min on first run), and ships
-  `vm/` into it. Use `--rebuild <name>` to `vagrant destroy -f` and re-provision.
-  Each worktree gets its own host port (sequential, stored in
-  `~/.config/terminal-dev-setup/worktree-ports.tsv`); the dev server is at
-  `http://localhost:<port>`.
+- **VM**: install Docker Desktop, Vagrant, plus `git` and `jq` for the
+  script's prereq check (`brew install vagrant git jq` +
+  `brew install --cask docker-desktop`). Then `bin/create-worktree.sh <name>`:
+  on first invocation clones the canonical `~/work/zulip` repo, then adds a
+  linked `git worktree` for the given name, brings up a Vagrant-managed
+  Docker container, and runs Zulip's full `./tools/provision` automatically
+  (10–20 min on first run). Use `--rebuild <name>` to `vagrant destroy -f`
+  and re-provision. Each worktree gets its own host port (sequential, stored
+  in `~/.config/terminal-dev-setup/worktree-ports.tsv`); the dev server is
+  at `http://localhost:<port>`.

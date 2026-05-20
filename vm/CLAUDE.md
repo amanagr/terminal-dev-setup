@@ -78,12 +78,12 @@ fetched via the webpack-dev-server websocket dies).
 
 A small upstream-friendly patch is committed locally on Zulip branch
 `fix-webpack-client-port-for-non-default-host-port` (in `~/work/zulip`):
-`tools/webpack` gains a `--client-port` option mapped to webpack-dev-server's
+`tools/webpack` gains a `--hmr-client-port` option mapped to webpack-dev-server's
 `--client-web-socket-url-port`; `tools/run-dev` derives its value from
 `EXTERNAL_HOST` (which already carries the host-side proxy port) plus the
 constant offset between proxy and webpack ports, so no new env-var contract
 is introduced. With `EXTERNAL_HOST=localhost:10001`, run-dev computes 10004
-and passes `--client-port=10004` automatically.
+and passes `--hmr-client-port=10004` automatically.
 
 To use the fix on a non-`main` worktree, merge or cherry-pick the patch
 into that worktree's branch. The patch is the kind of thing worth filing
@@ -115,7 +115,7 @@ Full list in [`bash-aliases.sh`](./bash-aliases.sh). The non-obvious ones:
 | `zcd`      | `cd $WORKTREE_DIR` |
 | `run`      | `./tools/run-dev --interface=` (the empty-interface form) |
 | `zlint`    | `cd $WORKTREE_DIR && ./tools/lint --modified` |
-| `live-update` | `git cherry-pick fix-webpack-client-port-for-non-default-host-port` — pulls the HMR fix onto the current branch (see §"Webpack HMR on non-9991 worktrees") |
+| `live-update` | cherry-picks `fix-webpack-client-port-for-non-default-host-port` onto the current branch — guarded: no-ops if the patch is already in HEAD's history, errors actionably on missing-ref or conflict, never leaves a sticky CHERRY_PICK_HEAD. See §"Webpack HMR on non-9991 worktrees" |
 | `g`, `gs`, `gd`, `gl`, `gla`, `gco`, `gcb`, … | usual git shortcuts (mirrors host) |
 | `gshow`, `glf`, `gls`, `ggrep`, `gfix`, `gdiverg` | git helper functions |
 | `v` / `vi` | `vim` |

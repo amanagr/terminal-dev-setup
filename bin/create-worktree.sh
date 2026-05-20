@@ -172,21 +172,47 @@ fi
 #  - both read max=9991 from an empty tsv and assign the same next port, or
 #  - both write the global config with different HOST_PORTs and clobber each other.
 # macOS doesn't ship flock(1), so we use a mkdir-based lock (atomic per POSIX).
+# The lock sits under XDG_RUNTIME_DIR (or /tmp on macOS, which has no
+# XDG_RUNTIME_DIR) — transient location that survives `rm -rf $PORTS_DIR`.
 step "Allocate HOST_PORT for '$NAME' (lock-guarded)"
 mkdir -p "$PORTS_DIR"
-LOCK_DIR="$PORTS_DIR/.create-worktree.lock"
+LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/create-worktree.$UID.lock"
+LOCK_WAIT_MAX=120  # seconds before bailing on a stuck lock
+# Install the cleanup trap BEFORE we may acquire the lock — and re-set the
+# same trap whenever we touch any other state. Covers EXIT (normal & errored)
+# plus the three common-interrupt signals. SIGKILL is uncatchable per POSIX;
+# the stale-PID reclaim below handles that case.
+trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM HUP
+waited=0
 while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    echo "another create-worktree.sh is running — waiting…"
+    # Try to reclaim a stale lock: if the PID file says a process that no
+    # longer exists, the lock is orphaned (kill -9 / OOM / hard reboot).
+    if [ -f "$LOCK_DIR/pid" ] \
+            && ! kill -0 "$(cat "$LOCK_DIR/pid" 2>/dev/null)" 2>/dev/null; then
+        echo "stale lock from PID $(cat "$LOCK_DIR/pid" 2>/dev/null) — reclaiming"
+        rm -rf "$LOCK_DIR"
+        continue
+    fi
+    if [ "$waited" -ge "$LOCK_WAIT_MAX" ]; then
+        echo "create-worktree.sh: $LOCK_DIR held for >${LOCK_WAIT_MAX}s — bailing." >&2
+        echo "If you're sure no other run is active, \`rm -rf $LOCK_DIR\` and retry." >&2
+        exit 1
+    fi
+    echo "another create-worktree.sh is running — waiting (${waited}s/${LOCK_WAIT_MAX}s)…"
     sleep 1
+    waited=$((waited + 1))
 done
-trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+echo "$$" > "$LOCK_DIR/pid"
+
 touch "$PORTS_FILE"
 PORT=$(awk -F'\t' -v n="$NAME" '$1==n {print $2; exit}' "$PORTS_FILE")
 if [ -z "$PORT" ]; then
     # Next stride above the current max (or BASE_PORT if file is empty).
+    # Only consider rows where $2 is a valid port number; skip malformed
+    # lines so a stray edit can't push allocations into nonsense ranges.
     PORT=$(awk -F'\t' -v base="$BASE_PORT" -v stride="$PORT_STRIDE" '
         BEGIN { max = base - stride }
-        $2+0 > max { max = $2+0 }
+        $2 ~ /^[0-9]+$/ && $2+0 >= base && $2+0 < 65536 && $2+0 > max { max = $2+0 }
         END { print max + stride }
     ' "$PORTS_FILE")
     printf '%s\t%s\n' "$NAME" "$PORT" >> "$PORTS_FILE"
@@ -247,10 +273,14 @@ step "Install claude/gh + drop aliases & claude settings into the container"
 # Claude settings: single source of truth is host/claude-settings.json;
 # strip the `hooks` block (those reference ~/.local/bin/claude-*.sh scripts
 # that don't exist headless and don't make sense without a desktop session).
+# Install the cleanup trap BEFORE mktemp so a SIGINT in the window between
+# file creation and trap-set doesn't leak the temp file. `${var:-}` keeps
+# the trap safe to fire even if mktemp hasn't run yet.
 # `mktemp -t prefix` on BSD/macOS is a different command (the prefix is just
 # a string, not a template) — explicit `prefix.XXXXXX` template is portable.
+filtered_settings=
+trap 'rm -f "${filtered_settings:-}"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM HUP
 filtered_settings=$(mktemp "${TMPDIR:-/tmp}/claude-settings.json.XXXXXX")
-trap 'rm -f "$filtered_settings"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
 ( cd "$DIR" && vagrant upload "$filtered_settings" /home/vagrant/.claude/settings.json )
 
@@ -305,7 +335,10 @@ if ! command -v gh >/dev/null 2>&1; then
     )
 fi
 
-cat > \$HOME/.zulip-dev-env.sh <<ENV
+# Outer EOF already expanded \$ZULIP_EXTERNAL_HOST / \$DIR on the host.
+# Quote the inner tag so the container's bash treats the body literally and
+# we don't accidentally re-expand any \$FOO that a future edit might add.
+cat > \$HOME/.zulip-dev-env.sh <<'ENV'
 export EXTERNAL_HOST="$ZULIP_EXTERNAL_HOST"
 export WORKTREE_DIR="$DIR"
 ENV
