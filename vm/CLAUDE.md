@@ -67,6 +67,28 @@ worktrees coexist.
 `create-worktree.sh` — the global config may currently hold a different
 worktree's port.
 
+### Webpack HMR on non-9991 worktrees
+
+Zulip's `tools/webpack` hardcodes the webpack-dev-server port at 9994, and
+webpack-dev-server's HMR client connects directly to `ws://localhost:9994/ws`,
+bypassing the proxy. With `HOST_PORT != 9991`, the Vagrant forward for 9994
+lands at host port `host_port+3` instead of 9994 — so HMR breaks on those
+worktrees (static UI loads through the proxy, but hot reload + anything
+fetched via the webpack-dev-server websocket dies).
+
+A small upstream-friendly patch is committed locally on Zulip branch
+`fix-webpack-client-port-for-non-default-host-port` (in `~/work/zulip`):
+`tools/webpack` gains a `--client-port` option mapped to webpack-dev-server's
+`--client-web-socket-url-port`; `tools/run-dev` derives its value from
+`EXTERNAL_HOST` (which already carries the host-side proxy port) plus the
+constant offset between proxy and webpack ports, so no new env-var contract
+is introduced. With `EXTERNAL_HOST=localhost:10001`, run-dev computes 10004
+and passes `--client-port=10004` automatically.
+
+To use the fix on a non-`main` worktree, merge or cherry-pick the patch
+into that worktree's branch. The patch is the kind of thing worth filing
+upstream — see the commit message for the rationale.
+
 ## Tools installed by the provision step
 
 `create-worktree.sh` installs these on top of Zulip's own provision
