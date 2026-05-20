@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # create-worktree.sh — provision a Zulip dev environment using Vagrant + Docker.
 #
-# First time with name "zulip" sets up the canonical clone at ~/work/zulip;
-# every other name becomes a linked `git worktree` of that main clone — they
+# Always ensures the canonical clone exists at ~/work/zulip first; non-"zulip"
+# names are then added as linked `git worktree`s of that main clone — they
 # share .git/, so branches/commits are visible from every worktree.
 #
 # Each worktree gets its own Docker container managed by Vagrant. We use
@@ -59,9 +59,9 @@ Usage: create-worktree.sh [--rebuild] <name>
   --rebuild   `vagrant destroy -f` this worktree's container and re-up
               (keeps the working tree and branch intact)
 
-First time with name "zulip" sets up the canonical clone at ~/work/zulip;
-other names become linked git worktrees of it. Re-runs resume from
-wherever a previous run died.
+Always ensures the canonical clone at ~/work/zulip exists first; non-"zulip"
+names become linked git worktrees of it. Re-runs resume from wherever a
+previous run died.
 EOF
 }
 
@@ -263,6 +263,12 @@ for cmd in git curl jq; do
 done
 
 git config --global core.editor vim
+
+# ~/.local/bin isn't on PATH in vagrant ssh's non-login non-interactive
+# shell, so \`command -v claude\` misses an already-installed claude and
+# would reinstall on every re-run. Prepend ~/.local/bin so the check is
+# accurate.
+export PATH="\$HOME/.local/bin:\$PATH"
 
 if ! command -v claude >/dev/null; then
     curl -fsSL https://claude.ai/install.sh | bash
