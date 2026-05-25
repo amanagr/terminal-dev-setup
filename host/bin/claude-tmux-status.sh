@@ -7,8 +7,11 @@
 # the process's brand color (git orange, docker blue, rust orange,
 # go cyan, ...). For claude panes the glyph is state-aware, driven
 # by @claude_state (set by claude-tmux-state.sh):
-#   working    → pulsing braille spinner cycling through purple shades
+#   working    → purple sparkle "bloom" (shimmer→asterisk), color-pulsed
 #   permission → ⚠ in warning yellow
+#   done       → green bell: Claude finished & you haven't visited the
+#                pane since (set on Stop only if you weren't watching;
+#                cleared the instant you visit it, by claude-pane-seen.sh)
 #   idle / *   → no glyph (the pane itself signals "claude is here")
 #
 # Inactive tabs render the glyph in muted gray so the rainbow of
@@ -64,7 +67,7 @@ emit() {
 }
 
 # Aggregate claude state across all panes in the window with priority
-# permission > working > none. Runs *before* the process-icon switch
+# permission > working > done > none. Runs *before* the process-icon switch
 # so a background claude needing attention still signals on the tab
 # even when the active pane is something else, and so two claude
 # panes in the same window can't mask each other's state.
@@ -81,24 +84,39 @@ while IFS= read -r s; do
     case "$s" in
         permission) claude_state=permission; break ;;
         working)    [ "$claude_state" = permission ] || claude_state=working ;;
+        done)       case "$claude_state" in permission|working) ;; *) claude_state=done ;; esac ;;
     esac
 done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
 case "$claude_state" in
     working)
-        # Braille rotation (10 frames, slow clockwise sweep) +
-        # purple-shade pulse (4 frames, faster). The two cycles
-        # being co-prime gives a richer, less-mechanical feel.
-        glyphs=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-        hues=('#d2b3ff' '#bc8cff' '#a371f7' '#bc8cff')
+        # Purple sparkle "bloom": a Nerd Font shimmer glyph that opens
+        # into an asterisk at peak brightness, color breathing across
+        # the Claude-purple ramp. 4-frame glyph + 4-frame hue peak
+        # together so the asterisk lands on the brightest shade. All
+        # glyphs are in JetBrainsMono Nerd Font Mono — the old braille
+        # frames were NOT in this face, so they fell back to another
+        # font and jittered the tab width. Frame clock is date +%s
+        # (~1 fps); a daemon writing #{E:@opt} could drive it smoother
+        # later without touching this arm.
+        glyphs=(󰰥 󰰥 󰸐 󰰥)
+        hues=('#a371f7' '#bc8cff' '#d2b3ff' '#bc8cff')
         n=$(date +%s)
         printf '#[fg=%s]%s #[default]' \
             "${hues[$(( n % 4 ))]}" \
-            "${glyphs[$(( n % 10 ))]}"
+            "${glyphs[$(( n % 4 ))]}"
         exit 0
         ;;
     permission)
         printf '#[fg=%s]⚠ #[default]' "$warning"
+        exit 0
+        ;;
+    done)
+        # Green bell = "Claude finished — your turn", on a pane you
+        # weren't looking at when it stopped. Static (no animation).
+        # Cleared the moment you visit the pane (claude-pane-seen.sh,
+        # wired to tmux after-select-pane / pane-focus-in hooks).
+        printf '#[fg=%s] #[default]' '#3fb950'
         exit 0
         ;;
 esac

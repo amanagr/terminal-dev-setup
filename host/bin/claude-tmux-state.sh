@@ -46,7 +46,7 @@ fi
 
 case "$event" in
     user-prompt-submit|pre-tool-use) state=working ;;
-    stop)               state=idle ;;
+    stop)               state=done ;;
     session-end)        state=ended ;;
     session-start)      state=idle ;;
     notification)
@@ -73,6 +73,25 @@ adjust_interval() {
     fi
 }
 
+# True when pane $1 is on-screen for a focused client right now: it must
+# be its window's active pane AND some attached, OS-focused client must be
+# sitting on that window. Lets the Stop handler tell "you watched it finish"
+# (stay quiet) from "it finished while you were away" (raise the done bell).
+# Relies on focus-events (set in tmux.conf) keeping #{client_flags} carrying
+# `focused`.
+pane_is_viewed() {
+    local pane=$1 p_active p_win flags cwin
+    read -r p_active p_win <<<"$(tmux display-message -p -t "$pane" \
+        '#{pane_active} #{window_id}' 2>/dev/null)"
+    [ "$p_active" = 1 ] || return 1
+    while IFS='|' read -r flags cwin; do
+        case "$flags" in
+            *focused*) [ "$cwin" = "$p_win" ] && return 0 ;;
+        esac
+    done < <(tmux list-clients -F '#{client_flags}|#{window_id}' 2>/dev/null)
+    return 1
+}
+
 pid=$PPID
 prev_pid=
 while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
@@ -86,6 +105,11 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
             pane=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null \
                 | awk -v p="$prev_pid" '$1==p {print $2; exit}')
             [ -n "$pane" ] || exit 0
+            # Stop while you were already watching this pane = you saw it
+            # finish, so stay quiet (idle) rather than raising the bell.
+            if [ "$state" = done ] && pane_is_viewed "$pane"; then
+                state=idle
+            fi
             if [ "$state" = ended ]; then
                 tmux set-option -p -u -t "$pane" @claude_state 2>/dev/null || true
             else
