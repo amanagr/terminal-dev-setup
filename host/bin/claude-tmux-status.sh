@@ -98,21 +98,19 @@ done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
 case "$claude_state" in
     working)
-        # Purple sparkle "bloom": a Nerd Font shimmer glyph that opens
-        # into an asterisk at peak brightness, color breathing across
-        # the Claude-purple ramp. 4-frame glyph + 4-frame hue peak
-        # together so the asterisk lands on the brightest shade. All
-        # glyphs are in JetBrainsMono Nerd Font Mono — the old braille
-        # frames were NOT in this face, so they fell back to another
-        # font and jittered the tab width. Frame clock is date +%s
-        # (~1 fps); a daemon writing #{E:@opt} could drive it smoother
-        # later without touching this arm.
-        glyphs=(󰰥 󰰥 󰸐 󰰥)
-        hues=('#a371f7' '#bc8cff' '#d2b3ff' '#bc8cff')
+        # Claude-style sparkle bloom: a point of light grows into a
+        # six-pointed star and eases back down (· ✢ ✳ ✶ ✻ ✽ and down),
+        # brightening to a near-white peak as it opens — matches Claude
+        # Code's own working animation. Some frames (✳ ✻ ✽) aren't in
+        # JetBrains Mono NL and come from terminal font-fallback, but
+        # render cleanly. Frame clock is date +%s (~1 fps fallback); the
+        # daemon drives the same frames at ~5 fps on the focused window.
+        glyphs=(· ✢ ✳ ✶ ✻ ✽ ✻ ✶ ✳ ✢)
+        hues=('#7c5cb8' '#9a6ef0' '#a371f7' '#bc8cff' '#d2b3ff' '#ece4ff' '#d2b3ff' '#bc8cff' '#a371f7' '#9a6ef0')
         n=$(date +%s)
         printf '#[fg=%s]%s #[default]' \
-            "${hues[$(( n % 4 ))]}" \
-            "${glyphs[$(( n % 4 ))]}"
+            "${hues[$(( n % 10 ))]}" \
+            "${glyphs[$(( n % 10 ))]}"
         exit 0
         ;;
     permission)
