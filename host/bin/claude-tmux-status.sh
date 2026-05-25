@@ -12,6 +12,7 @@
 #   done       → green bell: Claude finished & you haven't visited the
 #                pane since (set on Stop only if you weren't watching;
 #                cleared the instant you visit it, by claude-pane-seen.sh)
+#   stalled    → red error glyph: session ended mid-work (abnormal exit)
 #   idle / *   → no glyph (the pane itself signals "claude is here")
 #
 # Inactive tabs render the glyph in muted gray so the rainbow of
@@ -67,7 +68,7 @@ emit() {
 }
 
 # Aggregate claude state across all panes in the window with priority
-# permission > working > done > none. Runs *before* the process-icon switch
+# permission > stalled > working > done > none. Runs *before* the process-icon switch
 # so a background claude needing attention still signals on the tab
 # even when the active pane is something else, and so two claude
 # panes in the same window can't mask each other's state.
@@ -80,12 +81,17 @@ emit() {
 # the old cmd==claude gate silently hid the glyph after the Linux→mac
 # move.
 claude_state=
+best=0
 while IFS= read -r s; do
     case "$s" in
-        permission) claude_state=permission; break ;;
-        working)    [ "$claude_state" = permission ] || claude_state=working ;;
-        done)       case "$claude_state" in permission|working) ;; *) claude_state=done ;; esac ;;
+        permission) p=4 ;;
+        stalled)    p=3 ;;
+        working)    p=2 ;;
+        done)       p=1 ;;
+        *)          p=0 ;;
     esac
+    if [ "$p" -gt "$best" ]; then best=$p; claude_state=$s; fi
+    [ "$best" = 4 ] && break
 done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
 case "$claude_state" in
@@ -117,6 +123,11 @@ case "$claude_state" in
         # Cleared the moment you visit the pane (claude-pane-seen.sh,
         # wired to tmux after-select-pane / pane-focus-in hooks).
         printf '#[fg=%s] #[default]' '#3fb950'
+        exit 0
+        ;;
+    stalled)
+        # Red error glyph: the session ended mid-work (abnormal exit).
+        printf '#[fg=%s] #[default]' '#f85149'
         exit 0
         ;;
 esac

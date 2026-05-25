@@ -110,6 +110,12 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
             if [ "$state" = done ] && pane_is_viewed "$pane"; then
                 state=idle
             fi
+            # Session ended while still working (no clean Stop first) is an
+            # abnormal exit; leave a `stalled` marker instead of clearing it.
+            if [ "$state" = ended ]; then
+                prior=$(tmux show-options -pqv -t "$pane" @claude_state 2>/dev/null || true)
+                [ "$prior" = working ] && state=stalled
+            fi
             if [ "$state" = ended ]; then
                 tmux set-option -p -u -t "$pane" @claude_state 2>/dev/null || true
             else
