@@ -42,10 +42,11 @@ trap cleanup EXIT
 trap 'exit 0' INT TERM          # ensure SIGTERM actually terminates (-> EXIT trap)
 
 # Claude-style sparkle bloom: a point of light grows into a six-pointed star
-# and eases back (· ✢ ✳ ✶ ✻ ✽ and down), brightening to a near-white peak.
-# Must stay in sync with the 1 fps fallback in claude-tmux-status.sh.
+# and eases back (· ✢ ✳ ✶ ✻ ✽ and down), pulsed in Claude's logo orange
+# (#d97757) and brightening to a glowing peak. Stay in sync with the
+# claude-tmux-status.sh fallback.
 glyphs=(· ✢ ✳ ✶ ✻ ✽ ✻ ✶ ✳ ✢)
-hues=('#7c5cb8' '#9a6ef0' '#a371f7' '#bc8cff' '#d2b3ff' '#ece4ff' '#d2b3ff' '#bc8cff' '#a371f7' '#9a6ef0')
+hues=('#9a5a44' '#c06b4c' '#d97757' '#e88a66' '#f59d79' '#ffb491' '#f59d79' '#e88a66' '#d97757' '#c06b4c')
 nf=${#glyphs[@]}
 i=0
 

@@ -105,8 +105,9 @@ case "$claude_state" in
         # JetBrains Mono NL and come from terminal font-fallback, but
         # render cleanly. Frame clock is date +%s (~1 fps fallback); the
         # daemon drives the same frames at ~5 fps on the focused window.
+        # Pulsed in Claude's logo orange (#d97757), brightening to a peak.
         glyphs=(· ✢ ✳ ✶ ✻ ✽ ✻ ✶ ✳ ✢)
-        hues=('#7c5cb8' '#9a6ef0' '#a371f7' '#bc8cff' '#d2b3ff' '#ece4ff' '#d2b3ff' '#bc8cff' '#a371f7' '#9a6ef0')
+        hues=('#9a5a44' '#c06b4c' '#d97757' '#e88a66' '#f59d79' '#ffb491' '#f59d79' '#e88a66' '#d97757' '#c06b4c')
         n=$(date +%s)
         printf '#[fg=%s]%s #[default]' \
             "${hues[$(( n % 10 ))]}" \
