@@ -31,6 +31,13 @@ if ! mkdir "$lockdir" 2>/dev/null; then
 fi
 echo "$$" > "$lockdir/pid" 2>/dev/null || true
 
+# Fresh slate: clear any @claude_anim a predecessor left frozen. A clean exit
+# clears its own (EXIT trap), but a SIGKILL would not — and a stale frame on a
+# window this instance never animates would otherwise never get cleared.
+tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r w; do
+    tmux set-option -w -u -t "$w" @claude_anim 2>/dev/null || true
+done
+
 animated_win=""
 cleanup() {
     [ -n "$animated_win" ] && tmux set-option -w -u -t "$animated_win" @claude_anim 2>/dev/null || true

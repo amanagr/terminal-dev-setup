@@ -7,7 +7,7 @@
 # the process's brand color (git orange, docker blue, rust orange,
 # go cyan, ...). For claude panes the glyph is state-aware, driven
 # by @claude_state (set by claude-tmux-state.sh):
-#   working    → purple sparkle "bloom" (shimmer→asterisk), color-pulsed
+#   working    → Claude's sparkle bloom · ✢ ✳ ✶ ✻ ✽ in Claude's logo orange
 #   permission → ⚠ in warning yellow
 #   done       → bright green bell: Claude finished & you haven't visited
 #                the pane since (set on Stop when you weren't watching)
@@ -20,7 +20,7 @@
 # brand colors doesn't compete with the active-tab highlight; the
 # active tab emits the full brand color on its surface bg. Claude
 # state glyphs always keep their own color since the color *is* the
-# signal (purple pulse = working, yellow ⚠ = permission).
+# signal (orange bloom = working, green bell = your turn, yellow ⚠ = needs you).
 #
 # Glyph choices follow the joshmedeski/tmux-nerd-font-window-name
 # defaults (https://github.com/joshmedeski/tmux-nerd-font-window-name);
@@ -100,7 +100,7 @@ case "$claude_state" in
     working)
         # Claude-style sparkle bloom: a point of light grows into a
         # six-pointed star and eases back down (· ✢ ✳ ✶ ✻ ✽ and down),
-        # brightening to a near-white peak as it opens — matches Claude
+        # brightening to a glowing peak as it opens — matches Claude
         # Code's own working animation. Some frames (✳ ✻ ✽) aren't in
         # JetBrains Mono NL and come from terminal font-fallback, but
         # render cleanly. Frame clock is date +%s (~1 fps fallback); the

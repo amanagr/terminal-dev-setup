@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sets the per-pane @claude_state tmux option from a Claude Code
 # hook event, so window-status-format (via claude-tmux-status.sh) can
-# render a pulsing dot / warning / process icon on the tab.
+# render a sparkle / bell / warning / process-icon glyph on the tab.
 #
 # Usage: claude-tmux-state.sh <event>
 #   event: user-prompt-submit | pre-tool-use | stop |
@@ -20,10 +20,10 @@
 # the same tmux window don't stomp each other's state — a finishing
 # claude won't flip the tab to `idle` while a sibling pane is still
 # `working`. claude-tmux-status.sh aggregates the per-pane states up
-# to the tab with priority permission > working > none.
+# to the tab with priority permission > stalled > working > done > done_seen.
 #
 # After each state change, status-interval is auto-tuned globally:
-#   1s when any pane is `working` (so the dot animates)
+#   1s when any pane is `working` (so the sparkle animates)
 #   5s otherwise (the static icons don't need fast refresh)
 #
 # Resolves the calling pane by walking parent PIDs up to the tmux

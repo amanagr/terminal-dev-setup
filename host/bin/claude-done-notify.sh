@@ -11,7 +11,9 @@ command -v tmux >/dev/null 2>&1 || exit 0
 
 [ "$(tmux show-options -pqv -t "$pane" @claude_state 2>/dev/null || true)" = done ] || exit 0
 
-where=$(tmux display-message -p -t "$pane" '#{session_name}:#{window_name}' 2>/dev/null || true)
+# Strip " and \ so an odd window name can't break the osascript string below
+# (the only branch that embeds it in a sub-language).
+where=$(tmux display-message -p -t "$pane" '#{session_name}:#{window_name}' 2>/dev/null | tr -d '"\\')
 title="Claude finished"
 msg="Your turn${where:+ — $where}"
 
