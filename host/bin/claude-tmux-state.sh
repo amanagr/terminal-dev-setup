@@ -115,6 +115,13 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
             else
                 tmux set-option -p -t "$pane" @claude_state "$state" 2>/dev/null || true
             fi
+            # Smooth-animation daemon owns the working glyph (~10 fps). Kick it
+            # on any working event; its mkdir lock makes a second one a no-op,
+            # and it self-exits once no pane is working.
+            if [ "$state" = working ]; then
+                nohup ~/.local/bin/claude-spinner-daemon.sh >/dev/null 2>&1 &
+                disown 2>/dev/null || true
+            fi
             adjust_interval
             # Bare `refresh-client -S` only refreshes whichever client
             # tmux happens to attribute to this connection (often the
