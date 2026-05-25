@@ -105,10 +105,18 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
             pane=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null \
                 | awk -v p="$prev_pid" '$1==p {print $2; exit}')
             [ -n "$pane" ] || exit 0
-            # Stop while you were already watching this pane = you saw it
-            # finish, so stay quiet (idle) rather than raising the bell.
+            # Stop while you were already watching the pane = you've seen it
+            # finish: mark it done-but-seen (a dim "your turn" bell), not the
+            # bright unseen bell.
             if [ "$state" = done ] && pane_is_viewed "$pane"; then
-                state=idle
+                state=done_seen
+            fi
+            # Finished on a pane you weren't watching: arm a one-shot ~18s timer.
+            # If you still haven't come to it by then (a visit flips done ->
+            # done_seen, a reply flips it -> working), raise a desktop toast.
+            # Cheap: one delayed run-shell, not a polling loop.
+            if [ "$state" = done ]; then
+                tmux run-shell -b -d 18 "$HOME/.local/bin/claude-done-notify.sh $pane" 2>/dev/null || true
             fi
             # Session ended while still working (no clean Stop first) is an
             # abnormal exit; leave a `stalled` marker instead of clearing it.

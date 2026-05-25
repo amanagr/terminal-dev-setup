@@ -9,9 +9,10 @@
 # by @claude_state (set by claude-tmux-state.sh):
 #   working    → purple sparkle "bloom" (shimmer→asterisk), color-pulsed
 #   permission → ⚠ in warning yellow
-#   done       → green bell: Claude finished & you haven't visited the
-#                pane since (set on Stop only if you weren't watching;
-#                cleared the instant you visit it, by claude-pane-seen.sh)
+#   done       → bright green bell: Claude finished & you haven't visited
+#                the pane since (set on Stop when you weren't watching)
+#   done_seen  → dim gray bell: finished and you've glanced, but haven't
+#                replied yet; clears on your next prompt
 #   stalled    → red error glyph: session ended mid-work (abnormal exit)
 #   idle / *   → no glyph (the pane itself signals "claude is here")
 #
@@ -68,7 +69,7 @@ emit() {
 }
 
 # Aggregate claude state across all panes in the window with priority
-# permission > stalled > working > done > none. Runs *before* the process-icon switch
+# permission > stalled > working > done > done_seen > none. Runs *before* the process-icon switch
 # so a background claude needing attention still signals on the tab
 # even when the active pane is something else, and so two claude
 # panes in the same window can't mask each other's state.
@@ -84,14 +85,15 @@ claude_state=
 best=0
 while IFS= read -r s; do
     case "$s" in
-        permission) p=4 ;;
-        stalled)    p=3 ;;
-        working)    p=2 ;;
-        done)       p=1 ;;
+        permission) p=5 ;;
+        stalled)    p=4 ;;
+        working)    p=3 ;;
+        done)       p=2 ;;
+        done_seen)  p=1 ;;
         *)          p=0 ;;
     esac
     if [ "$p" -gt "$best" ]; then best=$p; claude_state=$s; fi
-    [ "$best" = 4 ] && break
+    [ "$best" = 5 ] && break
 done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
 case "$claude_state" in
@@ -118,11 +120,16 @@ case "$claude_state" in
         exit 0
         ;;
     done)
-        # Green bell = "Claude finished — your turn", on a pane you
-        # weren't looking at when it stopped. Static (no animation).
-        # Cleared the moment you visit the pane (claude-pane-seen.sh,
-        # wired to tmux after-select-pane / pane-focus-in hooks).
+        # Bright green bell = "Claude finished — your turn", on a pane you
+        # weren't watching when it stopped. Static. A visit dims it to
+        # done_seen (claude-pane-seen.sh, via after-select-pane/pane-focus-in).
         printf '#[fg=%s] #[default]' '#3fb950'
+        exit 0
+        ;;
+    done_seen)
+        # Dim gray bell = finished, you've glanced, but haven't replied yet.
+        # Clears on your next prompt (working overwrites it).
+        printf '#[fg=%s] #[default]' '#7d8590'
         exit 0
         ;;
     stalled)

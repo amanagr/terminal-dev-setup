@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Clears the Claude "done / your turn" bell once you visit the pane.
+# Dims the Claude "done / your turn" bell once you visit the pane: a bright
+# unseen bell becomes a quiet "seen but unanswered" marker (done_seen). It
+# only fully clears when you reply (the next prompt) — not on a mere glance.
 #
 # Wired to tmux's after-select-pane and pane-focus-in hooks (see
 # tmux.conf), which pass the just-focused pane id as $1:
@@ -17,9 +19,10 @@ command -v tmux >/dev/null 2>&1 || exit 0
 state=$(tmux show-options -pqv -t "$pane" @claude_state 2>/dev/null || true)
 [ "$state" = done ] || exit 0
 
-# Visited → drop the badge. Unset (not "idle") to match the value the
-# state script leaves on session-end; both render as no glyph.
-tmux set-option -p -u -t "$pane" @claude_state 2>/dev/null || true
+# Visited an unseen "done" pane -> dim it to done_seen ("your turn, but you've
+# looked"). It stays a quiet marker until you actually reply (the next prompt
+# flips it to working) -- a glance does NOT clear it.
+tmux set-option -p -t "$pane" @claude_state done_seen 2>/dev/null || true
 
 # Refresh every attached client now so the tab clears immediately
 # rather than on the next status-interval tick (mirrors the loop in

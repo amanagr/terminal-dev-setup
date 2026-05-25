@@ -28,6 +28,7 @@ are guarded.
 | `bin/claude-pane-seen.sh` | `~/.local/bin/claude-pane-seen.sh` *(chmod +x)* |
 | `bin/claude-spinner-daemon.sh` | `~/.local/bin/claude-spinner-daemon.sh` *(chmod +x)* |
 | `bin/claude-notify.sh` | `~/.local/bin/claude-notify.sh` *(chmod +x)* |
+| `bin/claude-done-notify.sh` | `~/.local/bin/claude-done-notify.sh` *(chmod +x)* |
 | `bin/tmux-fzf-find.sh` | `~/.local/bin/tmux-fzf-find.sh` *(chmod +x)* |
 
 Add one line to `~/.zshrc` so the aliases load:
