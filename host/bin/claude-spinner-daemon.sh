@@ -1,82 +1,87 @@
 #!/usr/bin/env bash
-# Smooth (~10 fps) animator for the Claude "working" tab glyph.
+# Lightweight animator for the Claude "working" tab glyph.
 #
-# tmux can't animate faster than 1 fps on its own: status-interval floors at
-# 1s and #() output is throttled to one update per second. So while any pane
-# is working, this daemon loops at ~10 fps, writes the current sparkle frame
-# into each working window's @claude_anim window-option, and refreshes every
-# client. window-status-format reads @claude_anim via #{E:...} (synchronous,
-# no #() throttle); non-working windows keep @claude_anim cleared so their
-# format falls back to the #() claude-tmux-status.sh render (permission /
-# done / process-icon — all static, so 1 fps there is fine).
+# tmux can't animate faster than 1 fps on its own (#() output is throttled to
+# one update/sec), so the frame is written into the window-option @claude_anim
+# which window-status-format reads via #{E:...} (no throttle).
 #
-# Launched detached by claude-tmux-state.sh on any `working` event; a single
-# instance is enforced with a mkdir lock (portable — flock is Linux-only).
-# Self-terminating: exits when no pane is working or no client is attached.
+# CPU discipline (an earlier 10 fps, every-working-window version ran a laptop
+# hot): this animates ONLY the single window the focused client is currently
+# looking at, at ~5 fps. The moment you look away (different window, or the
+# terminal loses OS focus) it stops animating and drops to a cheap 1 s poll;
+# when no pane is working anywhere, it exits. Background working windows just
+# use the 1 fps #() fallback in claude-tmux-status.sh.
+#
+# Launched detached by claude-tmux-state.sh on a working event. Single instance
+# via a portable mkdir lock (flock is Linux-only) with stale-lock reclaim, an
+# ownership-yield guard, and an owner-checked cleanup. SIGTERM/INT exit cleanly.
 set -u
 command -v tmux >/dev/null 2>&1 || exit 0
 
+delay=0.2                       # ~5 fps while you're watching a working window
+
 lockdir="${TMPDIR:-/tmp}/claude-spinner.lock"
 if ! mkdir "$lockdir" 2>/dev/null; then
-    # Reclaim a stale lock left by a hard-killed daemon (recorded pid gone).
     if [ -r "$lockdir/pid" ] && ! kill -0 "$(cat "$lockdir/pid" 2>/dev/null)" 2>/dev/null; then
         rm -rf "$lockdir" 2>/dev/null || true
         mkdir "$lockdir" 2>/dev/null || exit 0
     else
-        exit 0   # a live daemon already owns the animation
+        exit 0
     fi
 fi
 echo "$$" > "$lockdir/pid" 2>/dev/null || true
 
+animated_win=""
 cleanup() {
-    # Drop every @claude_anim we set so tabs fall back to the static render.
-    tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r w; do
-        tmux set-option -w -u -t "$w" @claude_anim 2>/dev/null || true
-    done
-    # Only drop the lock if we still own it — never delete a successor's.
+    [ -n "$animated_win" ] && tmux set-option -w -u -t "$animated_win" @claude_anim 2>/dev/null || true
     if [ "$(cat "$lockdir/pid" 2>/dev/null)" = "$$" ]; then
         rm -rf "$lockdir" 2>/dev/null || true
     fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 0' INT TERM          # ensure SIGTERM actually terminates (-> EXIT trap)
 
-# Sparkle bloom: shimmer opening into an asterisk at peak brightness. Keep in
-# sync with the 1-fps fallback in claude-tmux-status.sh.
+# Sparkle bloom; in sync with the 1 fps fallback in claude-tmux-status.sh.
 glyphs=(󰰥 󰰥 󰸐 󰰥)
 hues=('#a371f7' '#bc8cff' '#d2b3ff' '#bc8cff')
 nf=${#glyphs[@]}
-
 i=0
-prev=""
+
 while :; do
-    # Yield if a newer instance has taken the lock (defensive against dups).
+    # Yield if a newer instance took the lock.
     [ "$(cat "$lockdir/pid" 2>/dev/null)" = "$$" ] || break
-    # Nothing to animate if no client is attached ...
-    tmux list-clients -F '#{client_tty}' 2>/dev/null | grep -q . || break
-    # ... or if no pane is working anywhere.
-    cur=$(tmux list-panes -a -F '#{window_id} #{@claude_state}' 2>/dev/null \
-        | awk '$2=="working"{print $1}' | sort -u)
-    [ -n "$cur" ] || break
 
-    frame="#[fg=${hues[$((i % nf))]}]${glyphs[$((i % nf))]} #[default]"
-    printf '%s\n' "$cur" | while IFS= read -r w; do
-        [ -n "$w" ] && tmux set-option -w -t "$w" @claude_anim "$frame" 2>/dev/null || true
-    done
+    # The window the OS-focused client is looking at, and its tty (one query).
+    # Empty when no client is focused (terminal in the background).
+    read -r fwin ftty < <(tmux list-clients -F '#{client_flags}|#{window_id}|#{client_tty}' 2>/dev/null \
+        | awk -F'|' '/focused/{print $2, $3; exit}')
 
-    # Windows that stopped working since last tick: clear their frame so the
-    # static render (done bell / permission / process icon) takes over again.
-    if [ -n "$prev" ]; then
-        comm -23 <(printf '%s\n' "$prev") <(printf '%s\n' "$cur") 2>/dev/null \
-            | while IFS= read -r w; do
-                  [ -n "$w" ] && tmux set-option -w -u -t "$w" @claude_anim 2>/dev/null || true
-              done
+    fworking=0
+    if [ -n "${fwin:-}" ]; then
+        tmux list-panes -t "$fwin" -F '#{@claude_state}' 2>/dev/null | grep -qx working && fworking=1
     fi
-    prev="$cur"
 
-    tmux list-clients -F '#{client_tty}' 2>/dev/null | while IFS= read -r tty; do
-        [ -n "$tty" ] && tmux refresh-client -S -t "$tty" 2>/dev/null || true
-    done
-
-    i=$(( (i + 1) % (nf * 64) ))
-    sleep 0.1
+    if [ "$fworking" = 1 ]; then
+        # Animate the focused, working window only.
+        if [ -n "$animated_win" ] && [ "$animated_win" != "$fwin" ]; then
+            tmux set-option -w -u -t "$animated_win" @claude_anim 2>/dev/null || true
+        fi
+        animated_win="$fwin"
+        tmux set-option -w -t "$fwin" @claude_anim \
+            "#[fg=${hues[$((i % nf))]}]${glyphs[$((i % nf))]} #[default]" 2>/dev/null || true
+        [ -n "${ftty:-}" ] && tmux refresh-client -S -t "$ftty" 2>/dev/null || true
+        i=$(( (i + 1) % (nf * 64) ))
+        sleep "$delay"
+    else
+        # Not looking at a working window: stop animating, then either exit
+        # (nothing working anywhere) or poll slowly (work continues elsewhere).
+        if [ -n "$animated_win" ]; then
+            tmux set-option -w -u -t "$animated_win" @claude_anim 2>/dev/null || true
+            animated_win=""
+            [ -n "${ftty:-}" ] && tmux refresh-client -S -t "$ftty" 2>/dev/null || true
+        fi
+        anywork=$(tmux list-panes -a -F '#{@claude_state}' 2>/dev/null | grep -cx working || true)
+        [ "${anywork:-0}" -gt 0 ] || break
+        sleep 1
+    fi
 done
