@@ -68,15 +68,21 @@ emit() {
 # so a background claude needing attention still signals on the tab
 # even when the active pane is something else, and so two claude
 # panes in the same window can't mask each other's state.
+#
+# Keyed off @claude_state alone — NOT pane_current_command. The hook
+# (claude-tmux-state.sh) only ever sets @claude_state on a real claude
+# pane, resolved via a PPID walk, so its presence already means "this
+# is claude". The CLI's reported command name is unreliable: on macOS
+# it surfaces as the version string (e.g. "2.1.150"), not "claude", so
+# the old cmd==claude gate silently hid the glyph after the Linux→mac
+# move.
 claude_state=
-while IFS=' ' read -r cmd s; do
-    [ "$cmd" = claude ] || continue
+while IFS= read -r s; do
     case "$s" in
         permission) claude_state=permission; break ;;
         working)    [ "$claude_state" = permission ] || claude_state=working ;;
     esac
-done < <(tmux list-panes -t "$window" \
-    -F '#{pane_current_command} #{@claude_state}' 2>/dev/null)
+done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
 case "$claude_state" in
     working)
