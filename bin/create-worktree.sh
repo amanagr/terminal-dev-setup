@@ -166,6 +166,17 @@ else
     fi
 fi
 
+# Keep the container-Claude runtime marker out of `git status`. vm/claude-vm-state.sh
+# writes .claude-vm-state into the bind-mounted worktree (so the host tmux can
+# render a "working" glyph); it's transient state, not a source change. info/exclude
+# lives in the shared common git dir, so one entry covers every linked worktree.
+gitdir=$(git -C "$DIR" rev-parse --git-common-dir 2>/dev/null || true)
+case "$gitdir" in ''|/*) : ;; *) gitdir="$DIR/$gitdir" ;; esac
+if [ -n "$gitdir" ] && [ -d "$gitdir/info" ]; then
+    grep -qxF '.claude-vm-state' "$gitdir/info/exclude" 2>/dev/null \
+        || printf '%s\n' '.claude-vm-state' >> "$gitdir/info/exclude"
+fi
+
 
 # ---------- 5+6. Allocate HOST_PORT and pin it in ~/.zulip-vagrant-config ----------
 # Both steps share a lock so two concurrent invocations don't:
@@ -321,6 +332,9 @@ step "Install claude/gh + drop aliases & claude settings into the container"
 ( cd "$DIR" && vagrant upload \
     "$REPO_DIR/vm/claude-bell.sh" \
     /home/vagrant/.local/bin/claude-bell.sh )
+( cd "$DIR" && vagrant upload \
+    "$REPO_DIR/vm/claude-vm-state.sh" \
+    /home/vagrant/.local/bin/claude-vm-state.sh )
 
 # Claude settings: single source of truth is host/claude-settings.json, but its
 # `hooks` block references host-only scripts (tmux-state + desktop toasts) that
@@ -360,9 +374,9 @@ done
 
 git config --global core.editor vim
 
-# vagrant upload doesn't preserve the mode bit; make the bell executable so
-# the Notification / AskUserQuestion hooks can invoke it.
-chmod +x \$HOME/.local/bin/claude-bell.sh 2>/dev/null || true
+# vagrant upload doesn't preserve the mode bit; make the hook scripts
+# executable so the Notification / AskUserQuestion / state hooks can invoke them.
+chmod +x \$HOME/.local/bin/claude-bell.sh \$HOME/.local/bin/claude-vm-state.sh 2>/dev/null || true
 
 # ~/.local/bin isn't on PATH in vagrant ssh's non-login non-interactive
 # shell, so \`command -v claude\` misses an already-installed claude and

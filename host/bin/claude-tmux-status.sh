@@ -96,6 +96,27 @@ while IFS= read -r s; do
     [ "$best" = 5 ] && break
 done < <(tmux list-panes -t "$window" -F '#{@claude_state}' 2>/dev/null)
 
+# Container Claude can't set @claude_state on the host tmux (no socket). Its
+# hooks instead write "$WORKTREE_DIR/.claude-vm-state" ("working <epoch>") into
+# the bind-mounted worktree dir — the SAME absolute path as the SSH pane's cwd
+# here. If nothing host-local outranks working, treat a FRESH vm working file
+# as working. Stale (>180s) means the turn ended without a Stop or the
+# container died — fall back to no glyph. (Attention is handled by monitor-bell
+# off the bell the container rings, not here.)
+if [ "$best" -lt 3 ]; then
+    now=$(date +%s)
+    while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        f="$dir/.claude-vm-state"
+        [ -f "$f" ] || continue
+        IFS=' ' read -r vmstate vmts < "$f" 2>/dev/null || continue
+        [ "$vmstate" = working ] || continue
+        case "$vmts" in ''|*[!0-9]*) continue ;; esac
+        [ "$(( now - vmts ))" -lt 180 ] || continue
+        claude_state=working; best=3; break
+    done < <(tmux list-panes -t "$window" -F '#{pane_current_path}' 2>/dev/null)
+fi
+
 case "$claude_state" in
     working)
         # Claude-style sparkle bloom: a point of light grows into a

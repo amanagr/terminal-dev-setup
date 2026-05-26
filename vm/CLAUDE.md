@@ -17,6 +17,7 @@ config and are easy to file upstream.
 | ---- | ------------------------------- |
 | `bash-aliases.sh`      | `~/.config/terminal-dev-setup/aliases.sh` |
 | `claude-bell.sh`       | `~/.local/bin/claude-bell.sh` *(chmod +x in-container)* |
+| `claude-vm-state.sh`   | `~/.local/bin/claude-vm-state.sh` *(chmod +x in-container)* |
 | `claude-hooks.json`    | merged in as the `.hooks` block of `~/.claude/settings.json` (not a standalone file in the container) |
 | *(no `claude-settings.json` here)* | claude settings are shared with the host — `bin/create-worktree.sh` ships [`../host/claude-settings.json`](../host/claude-settings.json) with its `hooks` block **replaced** by [`claude-hooks.json`](./claude-hooks.json) (the host's tmux/desktop hooks can't run headless; the VM block is a terminal-bell alert via `claude-bell.sh`) into `~/.claude/settings.json` |
 
@@ -153,7 +154,8 @@ tmp=$(mktemp) && \
     ( cd ~/work/<name> && \
       vagrant upload "$tmp" /home/vagrant/.claude/settings.json && \
       vagrant upload "$R/vm/claude-bell.sh" /home/vagrant/.local/bin/claude-bell.sh && \
-      vagrant ssh --no-tty -c "chmod +x ~/.local/bin/claude-bell.sh" ) && \
+      vagrant upload "$R/vm/claude-vm-state.sh" /home/vagrant/.local/bin/claude-vm-state.sh && \
+      vagrant ssh --no-tty -c "chmod +x ~/.local/bin/claude-bell.sh ~/.local/bin/claude-vm-state.sh" ) && \
     rm "$tmp"
 ```
 
@@ -165,17 +167,30 @@ the script is idempotent). Use this if the bashrc managed block has drifted
 or you want all post-up steps refreshed in one go.
 
 The host's `hooks` are **replaced** (not just stripped) because they point at
-host-only scripts under `~/.local/bin/`: the tmux-state machine drives the
-*host's* status-bar glyph (the container can't reach the host tmux), and the
-desktop toasts need a desktop session the container doesn't have. The VM block
-(`claude-hooks.json` → `claude-bell.sh`) keeps the *intent* of the two "Claude
-is blocked on you" toasts — permission prompts and AskUserQuestion options — as
-a terminal **bell** (`\a`), which rides the `vagrant ssh` / VSCode pty back to
-your host terminal. Everything else — model, permissions, `effortLevel`,
-plugins — comes through as-is.
+host-only scripts under `~/.local/bin/`: the tmux-state machine sets
+`@claude_state` on the *host's* tmux panes (the container can't reach the host
+tmux socket), and the desktop toasts need a desktop session the container
+doesn't have. Everything else — model, permissions, `effortLevel`, plugins —
+comes through as-is. The VM block (`claude-hooks.json`) rebuilds the host's two
+host-tmux signals using channels that *do* cross the container boundary:
 
-The tmux "working" tab animation and any status-bar glyphs do **not** work for
-the container's Claude, for the same reason the toasts don't: they're set by
-`claude-tmux-state.sh` on the *host's* tmux panes, and Claude running inside
-the container can't reach the host tmux server. The bell is the only
-cross-environment signal.
+- **Attention** — `claude-bell.sh` rings a terminal **bell** (`\a` to `/dev/tty`)
+  on permission prompts and AskUserQuestion options. It rides the `vagrant ssh`
+  / VSCode pty to the host pane; the host tmux's `monitor-bell` + the
+  `window-status-bell-style` (warning hue) then highlight that window's tab,
+  auto-clearing when you focus it. No host tmux socket needed.
+- **Working glyph** — `claude-vm-state.sh` writes `working`/`idle` (+ epoch)
+  into `$WORKTREE_DIR/.claude-vm-state`. Because the worktree is bind-mounted at
+  the same absolute path on host and container, and the host SSH pane's cwd is
+  that path, `host/bin/claude-tmux-status.sh` reads
+  `#{pane_current_path}/.claude-vm-state` and renders the same sparkle-bloom
+  "working" glyph it uses for host Claude. A stale `working` (>180 s, e.g. a
+  crash that skipped `Stop`) is treated as idle. `create-worktree.sh` adds
+  `.claude-vm-state` to the shared `.git/info/exclude` so it never shows in
+  `git status`.
+
+Caveat: the working glyph animates at the active `status-interval` (5 s when no
+*host* Claude is also working — the host's 1 s bump keys off `@claude_state`,
+which container Claude doesn't set), so it steps rather than spins smoothly when
+the VM is the only thing working. Smoothing it would mean teaching the host
+spinner daemon to watch the state files — a possible follow-up.

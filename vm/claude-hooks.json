@@ -1,4 +1,14 @@
 {
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-vm-state.sh working"
+        }
+      ]
+    }
+  ],
   "Notification": [
     {
       "hooks": [
@@ -11,11 +21,39 @@
   ],
   "PreToolUse": [
     {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-vm-state.sh working"
+        }
+      ]
+    },
+    {
       "matcher": "AskUserQuestion",
       "hooks": [
         {
           "type": "command",
           "command": "$HOME/.local/bin/claude-bell.sh options"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-vm-state.sh idle"
+        }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-vm-state.sh clear"
         }
       ]
     }
