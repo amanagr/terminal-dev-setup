@@ -16,7 +16,9 @@ config and are easy to file upstream.
 | File | Deployed inside the container at |
 | ---- | ------------------------------- |
 | `bash-aliases.sh`      | `~/.config/terminal-dev-setup/aliases.sh` |
-| *(no `claude-settings.json` here)* | claude settings are shared with the host — `bin/create-worktree.sh` ships [`../host/claude-settings.json`](../host/claude-settings.json) with the `hooks` block stripped (host hooks reference tmux/notification scripts that don't exist headless) into `~/.claude/settings.json` |
+| `claude-bell.sh`       | `~/.local/bin/claude-bell.sh` *(chmod +x in-container)* |
+| `claude-hooks.json`    | merged in as the `.hooks` block of `~/.claude/settings.json` (not a standalone file in the container) |
+| *(no `claude-settings.json` here)* | claude settings are shared with the host — `bin/create-worktree.sh` ships [`../host/claude-settings.json`](../host/claude-settings.json) with its `hooks` block **replaced** by [`claude-hooks.json`](./claude-hooks.json) (the host's tmux/desktop hooks can't run headless; the VM block is a terminal-bell alert via `claude-bell.sh`) into `~/.claude/settings.json` |
 
 The bash aliases are sourced from `~/.bashrc` (between `# >>> managed-by:
 create-worktree.sh >>>` / `<<<` markers that the script rewrites on every
@@ -139,13 +141,19 @@ cd ~/work/<name> && vagrant upload \
     /home/vagrant/.config/terminal-dev-setup/aliases.sh
 ```
 
-For `host/claude-settings.json`, pipe through jq into a tempfile first
-(vagrant upload takes a file source, not stdin):
+For `host/claude-settings.json` (or `vm/claude-hooks.json`), inject the VM
+hooks via jq into a tempfile first (vagrant upload takes a file source, not
+stdin), and re-upload the bell script if it changed:
 
 ```sh
+R=/Users/$USER/terminal-dev-setup
 tmp=$(mktemp) && \
-    jq 'del(.hooks)' /Users/$USER/terminal-dev-setup/host/claude-settings.json > "$tmp" && \
-    ( cd ~/work/<name> && vagrant upload "$tmp" /home/vagrant/.claude/settings.json ) && \
+    jq --slurpfile vmhooks "$R/vm/claude-hooks.json" '.hooks = $vmhooks[0]' \
+       "$R/host/claude-settings.json" > "$tmp" && \
+    ( cd ~/work/<name> && \
+      vagrant upload "$tmp" /home/vagrant/.claude/settings.json && \
+      vagrant upload "$R/vm/claude-bell.sh" /home/vagrant/.local/bin/claude-bell.sh && \
+      vagrant ssh --no-tty -c "chmod +x ~/.local/bin/claude-bell.sh" ) && \
     rm "$tmp"
 ```
 
@@ -156,8 +164,18 @@ all post-up provisioning): `bin/create-worktree.sh <name>` (no `--rebuild` —
 the script is idempotent). Use this if the bashrc managed block has drifted
 or you want all post-up steps refreshed in one go.
 
-`hooks` is stripped because the host's notification + tmux-state hooks
-point at scripts under `~/.local/bin/` that don't exist in the container
-and don't make sense headless (`notify-send` needs a desktop session, and
-the in-terminal pause is signal enough when you're SSHed in). Everything
-else — model, permissions, `effortLevel`, plugins — comes through as-is.
+The host's `hooks` are **replaced** (not just stripped) because they point at
+host-only scripts under `~/.local/bin/`: the tmux-state machine drives the
+*host's* status-bar glyph (the container can't reach the host tmux), and the
+desktop toasts need a desktop session the container doesn't have. The VM block
+(`claude-hooks.json` → `claude-bell.sh`) keeps the *intent* of the two "Claude
+is blocked on you" toasts — permission prompts and AskUserQuestion options — as
+a terminal **bell** (`\a`), which rides the `vagrant ssh` / VSCode pty back to
+your host terminal. Everything else — model, permissions, `effortLevel`,
+plugins — comes through as-is.
+
+The tmux "working" tab animation and any status-bar glyphs do **not** work for
+the container's Claude, for the same reason the toasts don't: they're set by
+`claude-tmux-state.sh` on the *host's* tmux panes, and Claude running inside
+the container can't reach the host tmux server. The bell is the only
+cross-environment signal.

@@ -314,14 +314,20 @@ step "Install claude/gh + drop aliases & claude settings into the container"
     mkdir -p \$HOME/.claude \$HOME/.config/terminal-dev-setup \$HOME/.local/bin
 " )
 
-# Aliases (verbatim from vm/bash-aliases.sh).
+# Aliases (verbatim from vm/bash-aliases.sh) + the headless notification bell.
 ( cd "$DIR" && vagrant upload \
     "$REPO_DIR/vm/bash-aliases.sh" \
     /home/vagrant/.config/terminal-dev-setup/aliases.sh )
+( cd "$DIR" && vagrant upload \
+    "$REPO_DIR/vm/claude-bell.sh" \
+    /home/vagrant/.local/bin/claude-bell.sh )
 
-# Claude settings: single source of truth is host/claude-settings.json;
-# strip the `hooks` block (those reference ~/.local/bin/claude-*.sh scripts
-# that don't exist headless and don't make sense without a desktop session).
+# Claude settings: single source of truth is host/claude-settings.json, but its
+# `hooks` block references host-only scripts (tmux-state + desktop toasts) that
+# can't run headless. Replace `.hooks` wholesale with the VM block in
+# vm/claude-hooks.json — a terminal bell on permission prompts / AskUserQuestion
+# options (claude-bell.sh), which rides the ssh/VSCode pty back to your host
+# terminal. Everything else (model, permissions, plugins, …) passes through.
 # Install the cleanup trap BEFORE mktemp so a SIGINT in the window between
 # file creation and trap-set doesn't leak the temp file. `${var:-}` keeps
 # the trap safe to fire even if mktemp hasn't run yet.
@@ -330,7 +336,8 @@ step "Install claude/gh + drop aliases & claude settings into the container"
 filtered_settings=
 trap 'rm -f "${filtered_settings:-}"' EXIT INT TERM HUP
 filtered_settings=$(mktemp "${TMPDIR:-/tmp}/claude-settings.json.XXXXXX")
-jq 'del(.hooks)' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
+jq --slurpfile vmhooks "$REPO_DIR/vm/claude-hooks.json" \
+   '.hooks = $vmhooks[0]' "$REPO_DIR/host/claude-settings.json" > "$filtered_settings"
 ( cd "$DIR" && vagrant upload "$filtered_settings" /home/vagrant/.claude/settings.json )
 
 # Bash setup inside the container: install claude/gh if missing, write
@@ -352,6 +359,10 @@ for cmd in git curl jq; do
 done
 
 git config --global core.editor vim
+
+# vagrant upload doesn't preserve the mode bit; make the bell executable so
+# the Notification / AskUserQuestion hooks can invoke it.
+chmod +x \$HOME/.local/bin/claude-bell.sh 2>/dev/null || true
 
 # ~/.local/bin isn't on PATH in vagrant ssh's non-login non-interactive
 # shell, so \`command -v claude\` misses an already-installed claude and

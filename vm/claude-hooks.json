@@ -1,0 +1,23 @@
+{
+  "Notification": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-bell.sh notification"
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.local/bin/claude-bell.sh options"
+        }
+      ]
+    }
+  ]
+}
