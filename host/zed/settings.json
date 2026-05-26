@@ -1,0 +1,52 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "buffer_font_family": "JetBrainsMono Nerd Font",
+  "ui_font_family": "JetBrainsMono Nerd Font",
+  "base_keymap": "VSCode",
+  "tab_size": 4,
+  "vim": {
+    "toggle_relative_line_numbers": false
+  },
+  "diff_view_style": "split",
+  "git_panel": {
+    "collapse_untracked_diff": false
+  },
+  "minimum_split_diff_width": 30.0,
+  "edit_predictions": {
+    "provider": "copilot"
+  },
+  "terminal": {
+    "font_size": 13.0,
+    "shell": "system",
+    "show_count_badge": false
+  },
+  "ssh_connections": [],
+  "session": {
+    "trust_all_worktrees": true
+  },
+  "vim_mode": true,
+  "agent_servers": {
+    "claude-acp": {
+      "type": "registry"
+    }
+  },
+  "icon_theme": {
+    "mode": "light",
+    "light": "Catppuccin Latte",
+    "dark": "Catppuccin Latte"
+  },
+  "ui_font_size": 13.0,
+  "buffer_font_size": 12.0,
+  "theme": {
+    "mode": "dark",
+    "light": "One Light",
+    "dark": "GitHub Dark Default",
+  },
+}

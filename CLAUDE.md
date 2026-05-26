@@ -5,7 +5,7 @@ in this repo so they can stay in sync without juggling branches.
 
 | Directory | Target environment | What's in it |
 | --------- | ------------------ | ------------ |
-| [`host/`](./host/) | **macOS** (Apple Silicon, primary) — also works on modern Linux | tmux + zsh/oh-my-zsh + starship + ghostty + nvim as a **diffview commit-reviewer** (treesitter syntax, vivid diff colors, gutter change-bars; VSCode/Zed are the editors) + claude with tmux-integrated hooks |
+| [`host/`](./host/) | **macOS** (Apple Silicon, primary) — also works on modern Linux | tmux + zsh/oh-my-zsh + starship + ghostty + nvim as a **diffview commit-reviewer** (treesitter syntax, vivid diff colors, gutter change-bars; launched from Zed's Git Graph) + zed (commit-review task + settings) + claude with tmux-integrated hooks |
 | [`vm/`](./vm/)     | **Ubuntu 22.04 in a Vagrant-managed Docker container** (matches Zulip's recommended dev setup verbatim) | claude (plan mode) + bash aliases (no nvim — default `vim` for in-VM edits, VSCode on host for real editing) |
 | [`bin/create-worktree.sh`](./bin/create-worktree.sh) | host → container bridge | per-worktree Docker container via `vagrant up --provider=docker`; uploads `vm/bash-aliases.sh` and the host's `claude-settings.json` (hooks stripped), installs `claude` + `gh`, and writes a managed `~/.bashrc` block inside the container |
 

@@ -32,9 +32,11 @@ per-commit reviews via a `git-command` task that runs
 - **`place_diff_signs()`** — a colored `▎` gutter bar per changed line
   (green=add / red=delete / amber=change) to scan where changes fall.
 
-The **Zed side** — the `git-command` task, `diff_view_style: "split"`, and the
-`[delta "github-dark"]` gitconfig feature used by the quick non-interactive
-diff — lives in `~/.config/zed/` and `~/.gitconfig`, **not tracked here yet**.
+The **Zed side** is tracked here too: `zed/tasks.json` is the `git-command`
+task that launches the review, and `zed/settings.json` is the Zed config. (An
+earlier delta-based quick-diff task was dropped in favour of this interactive
+review — if you still have a `[delta "github-dark"]` block in `~/.gitconfig`
+from it, it's now unused and safe to delete.)
 
 ## Deploy paths
 
@@ -45,6 +47,8 @@ diff — lives in `~/.config/zed/` and `~/.gitconfig`, **not tracked here yet**.
 | `zsh-aliases.zsh` | `~/.config/terminal-dev-setup/aliases.zsh` |
 | `nvim/init.lua` | `~/.config/nvim/init.lua` |
 | `ghostty/config` | `~/.config/ghostty/config` |
+| `zed/tasks.json` | `~/.config/zed/tasks.json` |
+| `zed/settings.json` | `~/.config/zed/settings.json` *(Zed rewrites this live when you change settings in its UI — re-capture when it drifts)* |
 | `claude-settings.json` | `~/.claude/settings.json` |
 | `bin/claude-tmux-state.sh` | `~/.local/bin/claude-tmux-state.sh` *(chmod +x)* |
 | `bin/claude-tmux-status.sh` | `~/.local/bin/claude-tmux-status.sh` *(chmod +x)* |

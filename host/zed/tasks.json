@@ -1,0 +1,17 @@
+// Zed global tasks → deployed to ~/.config/zed/tasks.json
+// Docs: https://zed.dev/docs/tasks
+[
+    // Commit review: right-click a commit in the Git Graph and pick
+    // "Browse commit … (diffview)". The `git-command` tag puts the entry in
+    // that context menu and exposes $ZED_GIT_SHA. It opens the commit's diff in
+    // nvim + diffview (treesitter syntax, vivid colors, gutter change-bars) in
+    // the editor area, and quits + clears the tab when you close the view.
+    // See ../nvim/init.lua and the "Diff review" section in ../CLAUDE.md.
+    {
+        "label": "Browse commit $ZED_GIT_SHA_SHORT (diffview)",
+        "command": "nvim -c \"autocmd User DiffviewViewClosed ++once qa\" -c \"DiffviewOpen $ZED_GIT_SHA^..$ZED_GIT_SHA\"",
+        "tags": ["git-command"],
+        "reveal_target": "center",
+        "hide": "on_success"
+    }
+]
