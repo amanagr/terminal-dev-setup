@@ -110,16 +110,15 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Diff highlight groups (set by the theme and/or diffview) carry a foreground
--- that overrides treesitter syntax on changed lines, leaving them a flat
--- green/red. Strip the fg but keep the bg, so syntax colors show through on
--- added/changed/deleted lines while the diff background still marks them.
-local function strip_diff_fg()
-    for _, g in ipairs({ "DiffAdd", "DiffChange", "DiffText", "DiffDelete" }) do
-        local h = vim.api.nvim_get_hl(0, { name = g, link = false })
-        h.fg = nil
-        vim.api.nvim_set_hl(0, g, h)
-    end
+-- Diff highlight groups: vivid GitHub-style backgrounds with NO foreground, so
+-- treesitter syntax shows through on changed lines while add/delete/change stay
+-- clear. diffview's defaults were a dull, desaturated green/maroon AND carried a
+-- fg that flattened the syntax. Re-applied on view-open + colorscheme change.
+local function style_diff_hl()
+    vim.api.nvim_set_hl(0, "DiffAdd",    { bg = "#1a4d2b" }) -- added lines
+    vim.api.nvim_set_hl(0, "DiffText",   { bg = "#2b6f3d" }) -- changed words (emphasis)
+    vim.api.nvim_set_hl(0, "DiffChange", { bg = "#16361f" }) -- changed lines
+    vim.api.nvim_set_hl(0, "DiffDelete", { bg = "#5e2630" }) -- removed lines / fill
 end
 
 require("lazy").setup({
@@ -142,9 +141,9 @@ require("lazy").setup({
                 -- scroll both panes together (they're scrollbind-linked in diff mode).
                 view_opened = function()
                     vim.schedule(function()
-                        -- diffview sets diff colors on open; re-strip their fg
-                        -- so treesitter shows on changed lines.
-                        strip_diff_fg()
+                        -- diffview sets dull diff colors on open; restyle them
+                        -- (vivid bg, no fg) so treesitter shows on changed lines.
+                        style_diff_hl()
                         local target, best = nil, -1
                         for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
                             if vim.wo[w].diff then
@@ -197,6 +196,6 @@ require("github-theme").setup({
 })
 vim.cmd.colorscheme("github_dark")
 
--- Re-strip diff fg after any colorscheme change (see strip_diff_fg above).
-vim.api.nvim_create_autocmd("ColorScheme", { callback = strip_diff_fg })
-strip_diff_fg()
+-- Re-apply diff colors after any colorscheme change (see style_diff_hl above).
+vim.api.nvim_create_autocmd("ColorScheme", { callback = style_diff_hl })
+style_diff_hl()
