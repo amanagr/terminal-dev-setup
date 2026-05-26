@@ -115,13 +115,11 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
             if [ "$state" = done ] && pane_is_viewed "$pane"; then
                 state=done_seen
             fi
-            # Finished on a pane you weren't watching: arm a one-shot ~18s timer.
-            # If you still haven't come to it by then (a visit flips done ->
-            # done_seen, a reply flips it -> working), raise a desktop toast.
-            # Cheap: one delayed run-shell, not a polling loop.
-            if [ "$state" = done ]; then
-                tmux run-shell -b -d 18 "$HOME/.local/bin/claude-done-notify.sh $pane" 2>/dev/null || true
-            fi
+            # Finished on a pane you weren't watching: the `done` glyph in the
+            # tmux status bar (set below) is the only signal — no desktop toast.
+            # Toasts are deliberately reserved for the two "Claude is blocked on
+            # you" cases: permission prompts (claude-notify.sh) and multiple-
+            # choice options (claude-options-notify.sh). Completion is not one.
             # Session ended while still working (no clean Stop first) is an
             # abnormal exit; leave a `stalled` marker instead of clearing it.
             if [ "$state" = ended ]; then

@@ -6,11 +6,14 @@
 # desktop popup in case (1) — the idle reminder is noisy when you're
 # deliberately context-switched away.
 #
-# Discriminate via the typed `notification_type` field on the JSON
-# payload Claude streams on stdin (value `permission_prompt` for the
-# tool-permission case). A previous version did a raw substring match
-# for "permission", which false-positived on any payload whose `cwd`,
-# `transcript_path`, etc. contained the literal substring — e.g. a
+# Discriminate via the typed notification-kind field on the JSON payload
+# Claude streams on stdin (value `permission_prompt` for the tool-permission
+# case). The field is `.type` in current Claude Code; older builds called it
+# `.notification_type`, so we read `.type // .notification_type` to cover both.
+# (Reading only `.notification_type` silently matched nothing on current
+# builds — the permission toast never fired.) A previous version did a raw
+# substring match for "permission", which false-positived on any payload whose
+# `cwd`, `transcript_path`, etc. contained the literal substring — e.g. a
 # project at ~/code/permissions-test.
 #
 # Notifier is auto-detected: terminal-notifier on macOS, notify-send on
@@ -21,7 +24,7 @@ payload="$(cat)"
 
 # jq -e errors on null/empty; `// empty` + grep keeps this script silent
 # when the payload is missing/malformed rather than aborting the hook.
-ntype="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
+ntype="$(printf '%s' "$payload" | jq -r '.type // .notification_type // empty' 2>/dev/null || true)"
 [ "$ntype" = "permission_prompt" ] || exit 0
 
 title="Claude"
@@ -29,7 +32,9 @@ msg="Needs your permission"
 
 if command -v terminal-notifier >/dev/null 2>&1; then
     # -group lets a fresh prompt replace the previous one rather than stack.
-    exec terminal-notifier -group claude -title "$title" -message "$msg" -sound default
+    # >/dev/null: on replace, terminal-notifier logs "Removing previously sent
+    # notification…" to stdout, which the hook would otherwise surface in the pane.
+    exec terminal-notifier -group claude -title "$title" -message "$msg" -sound default >/dev/null 2>&1
 elif command -v notify-send >/dev/null 2>&1; then
     exec notify-send -u normal -i dialog-information "$title" "$msg"
 elif command -v osascript >/dev/null 2>&1; then

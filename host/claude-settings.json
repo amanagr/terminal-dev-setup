@@ -1,8 +1,7 @@
 {
   "permissions": {
     "ask": [
-      "Bash(git push:*)",
-      "Bash(git push)"
+      "Bash(git push:*)"
     ],
     "defaultMode": "auto",
     "additionalDirectories": [
@@ -43,6 +42,15 @@
             "command": "$HOME/.local/bin/claude-tmux-state.sh pre-tool-use"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/claude-options-notify.sh"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -77,10 +85,17 @@
     ]
   },
   "enabledPlugins": {
-    "figma@claude-plugins-official": true
+    "figma@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "expo@claude-plugins-official": true
   },
   "effortLevel": "xhigh",
   "awaySummaryEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "tui": "fullscreen"
+  "tui": "fullscreen",
+  "skipAutoPermissionPrompt": true
 }

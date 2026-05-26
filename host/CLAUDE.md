@@ -56,7 +56,7 @@ from it, it's now unused and safe to delete.)
 | `bin/claude-pane-seen.sh` | `~/.local/bin/claude-pane-seen.sh` *(chmod +x)* |
 | `bin/claude-spinner-daemon.sh` | `~/.local/bin/claude-spinner-daemon.sh` *(chmod +x)* |
 | `bin/claude-notify.sh` | `~/.local/bin/claude-notify.sh` *(chmod +x)* |
-| `bin/claude-done-notify.sh` | `~/.local/bin/claude-done-notify.sh` *(chmod +x)* |
+| `bin/claude-options-notify.sh` | `~/.local/bin/claude-options-notify.sh` *(chmod +x)* |
 | `bin/tmux-fzf-find.sh` | `~/.local/bin/tmux-fzf-find.sh` *(chmod +x)* |
 
 Add one line to `~/.zshrc` so the aliases load:
@@ -65,11 +65,24 @@ Add one line to `~/.zshrc` so the aliases load:
 [ -f ~/.config/terminal-dev-setup/aliases.zsh ] && source ~/.config/terminal-dev-setup/aliases.zsh
 ```
 
-`claude-notify.sh` filters Claude's `Notification` hook so a desktop
-toast pops only when Claude needs permission for a tool, not when it's
-emitting the 60-second idle reminder. The notifier is auto-detected:
-`terminal-notifier` first, then `notify-send` (Linux), then `osascript`
-as a last-resort macOS fallback.
+Desktop toasts fire in exactly the two cases where **Claude is blocked
+waiting on you** — never on idle reminders or task completion:
+
+- **Needs permission** — `claude-notify.sh`, on the `Notification` hook,
+  fires only when the payload's `.type` is `permission_prompt` (the field
+  is `.type` in current Claude Code; older builds used `.notification_type`,
+  so the script reads `.type // .notification_type`). It ignores the
+  60-second `idle_prompt` reminder.
+- **Has options to choose** — `claude-options-notify.sh`, on a `PreToolUse`
+  hook matched to the `AskUserQuestion` tool. AskUserQuestion does *not*
+  emit a `Notification` event, so intercepting the tool call is the only
+  way to catch it.
+
+The notifier is auto-detected: `terminal-notifier` first, then `notify-send`
+(Linux), then `osascript` as a last-resort macOS fallback. Each script
+swallows `terminal-notifier`'s stdout — on a `-group` replace it logs
+"Removing previously sent notification…", which would otherwise leak into
+the pane (via `tmux run-shell` it surfaces as a copy-mode overlay).
 
 **First-run permission on macOS**: macOS prompts to allow notifications
 from `terminal-notifier` the first time it fires. If you dismiss or deny
