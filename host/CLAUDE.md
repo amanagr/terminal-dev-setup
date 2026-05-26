@@ -55,15 +55,17 @@ Install Homebrew first (`/bin/bash -c "$(curl -fsSL https://raw.githubuserconten
 
 ```sh
 brew install neovim starship fzf fd bat jq gh terminal-notifier ripgrep \
-             git-delta tmux
+             git-delta tmux tree-sitter
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 ```
 
 (`fzf`, `fd`, `ripgrep`, `bat` aren't strictly nvim deps anymore — the
 host nvim is slim — but `zsh-aliases.zsh` uses them for the `fe` / `fcd`
-/ `frg` fuzzy helpers, so keep them. `tree-sitter-cli`, `sqlite` and
-`ruff` are no longer needed on the host; they live in the VM provision
-now, see [`../vm/CLAUDE.md`](../vm/CLAUDE.md).)
+/ `frg` fuzzy helpers, so keep them. `tree-sitter` (the CLI) IS needed
+again: nvim-treesitter's `main` branch uses it to compile parsers so diff
+syntax highlighting works in diffview. `sqlite` and `ruff` aren't needed
+on the host; they live in the VM provision, see
+[`../vm/CLAUDE.md`](../vm/CLAUDE.md).)
 
 Then:
 

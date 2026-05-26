@@ -1,7 +1,7 @@
 -- =============================================================================
 -- init.lua — slim host-side Neovim config.
--- Themes + visual chrome + diffview for branch review. No LSP, no oil,
--- no editing helpers.
+-- Themes + visual chrome + diffview + treesitter highlighting for branch
+-- review. No LSP, no oil, no editing helpers.
 -- =============================================================================
 
 vim.g.mapleader = " "
@@ -110,6 +110,18 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+-- Diff highlight groups (set by the theme and/or diffview) carry a foreground
+-- that overrides treesitter syntax on changed lines, leaving them a flat
+-- green/red. Strip the fg but keep the bg, so syntax colors show through on
+-- added/changed/deleted lines while the diff background still marks them.
+local function strip_diff_fg()
+    for _, g in ipairs({ "DiffAdd", "DiffChange", "DiffText", "DiffDelete" }) do
+        local h = vim.api.nvim_get_hl(0, { name = g, link = false })
+        h.fg = nil
+        vim.api.nvim_set_hl(0, g, h)
+    end
+end
+
 require("lazy").setup({
     { "projekt0n/github-nvim-theme", name = "github-theme", priority = 1000 },
     { "mustache/vim-mustache-handlebars", ft = { "handlebars", "html.handlebars", "mustache", "html.mustache" } },
@@ -130,6 +142,9 @@ require("lazy").setup({
                 -- scroll both panes together (they're scrollbind-linked in diff mode).
                 view_opened = function()
                     vim.schedule(function()
+                        -- diffview sets diff colors on open; re-strip their fg
+                        -- so treesitter shows on changed lines.
+                        strip_diff_fg()
                         local target, best = nil, -1
                         for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
                             if vim.wo[w].diff then
@@ -139,13 +154,6 @@ require("lazy").setup({
                         end
                         if target then vim.api.nvim_set_current_win(target) end
                     end)
-                end,
-                -- Treesitter highlighting composes with diff mode, so syntax
-                -- shows on changed lines too (regex :syntax doesn't reliably).
-                -- nvim 0.12's bundled parsers cover lua/py/js/ts/json/yaml/…;
-                -- pcall falls back to regex syntax for langs without a parser.
-                diff_buf_read = function(bufnr)
-                    pcall(vim.treesitter.start, bufnr)
                 end,
             },
             keymaps = {
@@ -157,6 +165,28 @@ require("lazy").setup({
             },
         },
     },
+
+    {
+        "nvim-treesitter/nvim-treesitter",
+        branch = "main",
+        lazy = false,
+        build = ":TSUpdate",
+        config = function()
+            -- Parsers compile via tree-sitter-cli (first launch installs them).
+            require("nvim-treesitter").install({
+                "bash", "c", "css", "diff", "dockerfile", "gitcommit", "go",
+                "html", "javascript", "json", "lua", "markdown",
+                "markdown_inline", "python", "rust", "toml", "tsx",
+                "typescript", "vim", "vimdoc", "yaml",
+            })
+            -- Enable treesitter highlighting for any buffer with a parser —
+            -- including diffview's diff buffers, so changed lines keep syntax.
+            -- pcall falls back to regex :syntax for langs without a parser.
+            vim.api.nvim_create_autocmd("FileType", {
+                callback = function(ev) pcall(vim.treesitter.start, ev.buf) end,
+            })
+        end,
+    },
 }, {
     checker = { enabled = false },
     change_detection = { notify = false },
@@ -167,12 +197,6 @@ require("github-theme").setup({
 })
 vim.cmd.colorscheme("github_dark")
 
--- Diffview: drop DiffText's near-white foreground so syntax token colors show
--- through on changed lines (keep its subtle background). Re-applied whenever
--- the colorscheme changes.
-local function fix_diff_text_hl()
-    local t = vim.api.nvim_get_hl(0, { name = "DiffText" })
-    vim.api.nvim_set_hl(0, "DiffText", { bg = t.bg })
-end
-vim.api.nvim_create_autocmd("ColorScheme", { callback = fix_diff_text_hl })
-fix_diff_text_hl()
+-- Re-strip diff fg after any colorscheme change (see strip_diff_fg above).
+vim.api.nvim_create_autocmd("ColorScheme", { callback = strip_diff_fg })
+strip_diff_fg()
