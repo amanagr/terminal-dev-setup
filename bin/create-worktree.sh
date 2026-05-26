@@ -166,15 +166,18 @@ else
     fi
 fi
 
-# Keep the container-Claude runtime marker out of `git status`. vm/claude-vm-state.sh
-# writes .claude-vm-state into the bind-mounted worktree (so the host tmux can
-# render a "working" glyph); it's transient state, not a source change. info/exclude
-# lives in the shared common git dir, so one entry covers every linked worktree.
+# Keep the container-Claude runtime markers out of `git status`: .claude-vm-state
+# (working glyph, vm/claude-vm-state.sh) and .claude-vm-attention (desktop-toast
+# trigger, vm/claude-bell.sh). Both are transient state written into the bind-
+# mounted worktree, not source changes. info/exclude lives in the shared common
+# git dir, so one entry each covers every linked worktree.
 gitdir=$(git -C "$DIR" rev-parse --git-common-dir 2>/dev/null || true)
 case "$gitdir" in ''|/*) : ;; *) gitdir="$DIR/$gitdir" ;; esac
 if [ -n "$gitdir" ] && [ -d "$gitdir/info" ]; then
-    grep -qxF '.claude-vm-state' "$gitdir/info/exclude" 2>/dev/null \
-        || printf '%s\n' '.claude-vm-state' >> "$gitdir/info/exclude"
+    for pat in .claude-vm-state .claude-vm-attention; do
+        grep -qxF "$pat" "$gitdir/info/exclude" 2>/dev/null \
+            || printf '%s\n' "$pat" >> "$gitdir/info/exclude"
+    done
 fi
 
 

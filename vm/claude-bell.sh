@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Headless-container analog of the host's desktop-toast hooks. The container
-# has no desktop session, so terminal-notifier / notify-send can't show a
-# toast — but a terminal bell (\a) written to the controlling tty rides the
-# `vagrant ssh` / VSCode pty back to your host terminal (Ghostty, VSCode), so
-# it still alerts you. We ring in the same two "Claude is blocked on you"
-# cases the host toasts cover: permission prompts and AskUserQuestion options.
+# Headless-container attention hook. The container has no desktop session, so it
+# can't pop a toast itself. It does two things that DO cross the boundary:
+#   1. Rings a terminal BEL (\a) to /dev/tty — rides the vagrant-ssh / VSCode pty
+#      to the host pane, where tmux's monitor-bell highlights the window tab.
+#   2. Drops an attention marker into the bind-mounted worktree
+#      ($WORKTREE_DIR/.claude-vm-attention = "<reason> <epoch>"). On the bell, the
+#      host tmux's alert-bell hook (claude-vm-notify.sh) reads it and pops a host
+#      terminal-notifier toast naming the folder. That's terminal-INDEPENDENT,
+#      unlike OSC notifications, which depend on the emulator (Ghostty/Zed/...).
+# Fires in the two "Claude is blocked on you" cases the host toasts cover:
+# permission prompts and AskUserQuestion options.
 #
 # Wired by create-worktree.sh into ~/.claude/settings.json (see vm/claude-hooks.json):
-#   Notification               -> claude-bell.sh notification  (rings only on permission_prompt)
+#   Notification               -> claude-bell.sh notification  (only permission_prompt)
 #   PreToolUse/AskUserQuestion -> claude-bell.sh options        (matcher already scopes it)
 set -u
 mode=${1:-}
@@ -15,27 +20,33 @@ payload="$(cat 2>/dev/null || true)"
 
 case "$mode" in
     notification)
-        # Ring only for tool-permission prompts, never the 60s idle reminder.
-        # Field is `.type` in current Claude Code; older builds used
-        # `.notification_type` — mirror host/bin/claude-notify.sh and read both.
-        # If jq is somehow absent, ntype is empty -> no ring (safe, no false bells).
+        # Only for tool-permission prompts, never the 60s idle reminder. Field is
+        # `.type` in current Claude Code; older builds used `.notification_type`.
         ntype="$(printf '%s' "$payload" | jq -r '.type // .notification_type // empty' 2>/dev/null || true)"
         [ "$ntype" = "permission_prompt" ] || exit 0
+        reason=permission
         ;;
     options)
-        : # the AskUserQuestion matcher already scopes this hook; always ring
+        reason=options   # the AskUserQuestion matcher already scopes this hook
         ;;
     *)
         exit 0
         ;;
 esac
 
-# /dev/tty is this session's controlling terminal (the forwarded pty), so the
-# BEL reaches the host terminal even though we run inside the container. BEL is
-# non-printing, so it's safe even while Claude owns the fullscreen TUI. Try the
-# tty, fall back to stdout if there's no usable one (e.g. headless automation).
-# `2>/dev/null` is ordered BEFORE `>/dev/tty` so fd 2 is already /dev/null when
-# the open fails — otherwise the shell leaks a "cannot open /dev/tty" error,
-# which a hook would surface. (`[ -w /dev/tty ]` is unreliable: it can pass when
-# the device exists but has no attached terminal, so just attempt the write.)
+# Drop the attention marker for the host's alert-bell hook (the folder is derived
+# host-side from the worktree path). Atomic temp+rename. WORKTREE_DIR (exported
+# via ~/.zulip-dev-env.sh) is the worktree root = the host SSH pane's cwd. Write
+# it BEFORE the bell so it's in place by the time the bell triggers the host hook.
+dir=${WORKTREE_DIR:-}
+if [ -n "$dir" ] && [ -d "$dir" ]; then
+    tmp="$dir/.claude-vm-attention.tmp.$$"
+    if printf '%s %s\n' "$reason" "$(date +%s)" > "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$dir/.claude-vm-attention" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    fi
+fi
+
+# Ring the bell. /dev/tty is the forwarded pty; BEL is non-printing (safe in the
+# fullscreen TUI). 2>/dev/null before >/dev/tty so a missing tty doesn't leak an
+# error; fall back to stdout if there's no usable tty.
 printf '\a' 2>/dev/null >/dev/tty || printf '\a'

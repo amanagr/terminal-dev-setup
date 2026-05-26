@@ -57,6 +57,7 @@ from it, it's now unused and safe to delete.)
 | `bin/claude-spinner-daemon.sh` | `~/.local/bin/claude-spinner-daemon.sh` *(chmod +x)* |
 | `bin/claude-notify.sh` | `~/.local/bin/claude-notify.sh` *(chmod +x)* |
 | `bin/claude-options-notify.sh` | `~/.local/bin/claude-options-notify.sh` *(chmod +x)* |
+| `bin/claude-vm-notify.sh` | `~/.local/bin/claude-vm-notify.sh` *(chmod +x)* |
 | `bin/tmux-fzf-find.sh` | `~/.local/bin/tmux-fzf-find.sh` *(chmod +x)* |
 
 Add one line to `~/.zshrc` so the aliases load:
@@ -78,11 +79,24 @@ waiting on you** — never on idle reminders or task completion:
   emit a `Notification` event, so intercepting the tool call is the only
   way to catch it.
 
+Both name the project folder (basename of the hook's `.cwd`) in the toast
+title and group per folder, so you can tell which checkout needs you and
+different checkouts don't replace each other's toasts.
+
 The notifier is auto-detected: `terminal-notifier` first, then `notify-send`
 (Linux), then `osascript` as a last-resort macOS fallback. Each script
 swallows `terminal-notifier`'s stdout — on a `-group` replace it logs
 "Removing previously sent notification…", which would otherwise leak into
 the pane (via `tmux run-shell` it surfaces as a copy-mode overlay).
+
+**Container Claude toasts** — `claude-vm-notify.sh` gives the *VM's* Claude the
+same desktop toast, the terminal-independent way. The container is headless and
+OSC notification sequences depend on the emulator (Ghostty supports them, Zed's
+terminal doesn't), so instead: `vm/claude-bell.sh` drops an attention marker in
+the bind-mounted worktree and rings a bell; tmux's `alert-bell` hook
+(`set-hook -g alert-bell`, with `bell-action any`) runs `claude-vm-notify.sh` on
+the **host**, which reads the marker and pops a `terminal-notifier` toast naming
+the folder. Non-Claude bells have no fresh marker, so they don't toast.
 
 **First-run permission on macOS**: macOS prompts to allow notifications
 from `terminal-notifier` the first time it fires. If you dismiss or deny

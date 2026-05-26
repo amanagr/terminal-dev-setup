@@ -176,18 +176,23 @@ host-tmux signals using channels that *do* cross the container boundary:
 
 - **Attention** — `claude-bell.sh` rings a terminal **bell** (`\a` to `/dev/tty`)
   on permission prompts and AskUserQuestion options. It rides the `vagrant ssh`
-  / VSCode pty to the host pane; the host tmux's `monitor-bell` + the
-  `window-status-bell-style` (warning hue) then highlight that window's tab,
-  auto-clearing when you focus it. No host tmux socket needed.
+  / VSCode pty to the host pane; the host tmux's `monitor-bell` +
+  `window-status-bell-style` (warning hue) highlight that window's tab,
+  auto-clearing when you focus it. The same script also drops an attention
+  marker — `$WORKTREE_DIR/.claude-vm-attention` (`<reason> <epoch>`) — and the
+  host tmux's `alert-bell` hook runs `host/bin/claude-vm-notify.sh`, which reads
+  it and pops a **`terminal-notifier` desktop toast naming the folder**. That's
+  terminal-INDEPENDENT (OSC notification sequences depend on the emulator —
+  Ghostty has them, Zed's terminal doesn't — so the toast is fired host-side).
 - **Working glyph** — `claude-vm-state.sh` writes `working`/`idle` (+ epoch)
   into `$WORKTREE_DIR/.claude-vm-state`. Because the worktree is bind-mounted at
   the same absolute path on host and container, and the host SSH pane's cwd is
   that path, `host/bin/claude-tmux-status.sh` reads
   `#{pane_current_path}/.claude-vm-state` and renders the same sparkle-bloom
   "working" glyph it uses for host Claude. A stale `working` (>180 s, e.g. a
-  crash that skipped `Stop`) is treated as idle. `create-worktree.sh` adds
-  `.claude-vm-state` to the shared `.git/info/exclude` so it never shows in
-  `git status`.
+  crash that skipped `Stop`) is treated as idle. `create-worktree.sh` adds both
+  `.claude-vm-state` and `.claude-vm-attention` to the shared `.git/info/exclude`
+  so they never show in `git status`.
 
 Caveat: the working glyph animates at the active `status-interval` (5 s when no
 *host* Claude is also working — the host's 1 s bump keys off `@claude_state`,

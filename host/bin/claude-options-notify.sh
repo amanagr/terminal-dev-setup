@@ -12,16 +12,22 @@
 # on macOS, notify-send on Linux, osascript as a last-resort macOS fallback.
 # Silent if none is installed (no spam in CI / headless environments).
 set -euo pipefail
-cat >/dev/null  # drain the JSON payload on stdin; no field is needed here
+payload="$(cat 2>/dev/null || true)"  # PreToolUse payload — read for .cwd
 
-title="Claude"
+# Include the project folder (basename of cwd) so you can tell which checkout
+# is asking when several are running; group per folder so they don't replace
+# each other across checkouts.
+cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
+folder=${cwd:+$(basename "$cwd")}
+title="Claude${folder:+ — $folder}"
 msg="Has options for you to choose"
+group="claude${folder:+-$folder}"
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-    # -group claude coalesces with the permission toast (one "needs you" toast
-    # at a time). >/dev/null swallows the "Removing previously sent…" log it
-    # prints on replace — otherwise it leaks into the pane via the hook.
-    exec terminal-notifier -group claude -title "$title" -message "$msg" -sound default >/dev/null 2>&1
+    # -group (per folder) coalesces repeats for one checkout. >/dev/null swallows
+    # the "Removing previously sent…" log it prints on replace — otherwise it
+    # leaks into the pane via the hook.
+    exec terminal-notifier -group "$group" -title "$title" -message "$msg" -sound default >/dev/null 2>&1
 elif command -v notify-send >/dev/null 2>&1; then
     exec notify-send -u normal -i dialog-question "$title" "$msg" >/dev/null 2>&1
 elif command -v osascript >/dev/null 2>&1; then

@@ -27,14 +27,21 @@ payload="$(cat)"
 ntype="$(printf '%s' "$payload" | jq -r '.type // .notification_type // empty' 2>/dev/null || true)"
 [ "$ntype" = "permission_prompt" ] || exit 0
 
-title="Claude"
+# Include the project folder (basename of the hook's cwd) so the toast says
+# *which* checkout needs you when several are running, and group per-folder so
+# different projects' prompts don't replace each other.
+cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
+folder=${cwd:+$(basename "$cwd")}
+title="Claude${folder:+ — $folder}"
 msg="Needs your permission"
+group="claude${folder:+-$folder}"
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-    # -group lets a fresh prompt replace the previous one rather than stack.
+    # -group (per folder) lets a fresh prompt replace the previous one for the
+    # same checkout rather than stack — while different checkouts coexist.
     # >/dev/null: on replace, terminal-notifier logs "Removing previously sent
     # notification…" to stdout, which the hook would otherwise surface in the pane.
-    exec terminal-notifier -group claude -title "$title" -message "$msg" -sound default >/dev/null 2>&1
+    exec terminal-notifier -group "$group" -title "$title" -message "$msg" -sound default >/dev/null 2>&1
 elif command -v notify-send >/dev/null 2>&1; then
     exec notify-send -u normal -i dialog-information "$title" "$msg"
 elif command -v osascript >/dev/null 2>&1; then
