@@ -13,8 +13,10 @@
 # for tools that don't need permission — state is already `working`.
 #
 # Hook JSON is read from stdin and (for `notification`) inspected for
-# `notification_type`: permission_prompt → permission, idle_prompt → idle.
-# elicitation_dialog (AskUserQuestion) is deliberately ignored — see below.
+# `notification_type`: only idle_prompt → idle. permission_prompt is NOT mapped
+# to the ⚠ tab glyph — AskUserQuestion fires permission_prompt too (verified via
+# the hook log), indistinguishable from a real tool-permission prompt, so an ⚠
+# on every question wrongly read as "blocked" while Claude was working.
 #
 # State is scoped to the pane (not the window) so two claude panes in
 # the same tmux window don't stomp each other's state — a finishing
@@ -52,12 +54,10 @@ case "$event" in
     notification)
         ntype=$(jq -r '.notification_type // empty' <<<"$payload" 2>/dev/null || true)
         case "$ntype" in
-            permission_prompt) state=permission ;;
             idle_prompt) state=idle ;;
-            # elicitation_dialog (AskUserQuestion) deliberately falls through:
-            # nothing clears it until the next PreToolUse/Stop, so a permission
-            # ⚠ would linger through the whole reply after the answer. Leave the
-            # pane in its current (working) state instead.
+            # permission_prompt (real tool perms AND AskUserQuestion — same type,
+            # not distinguishable) falls through: don't flag the tab. The desktop
+            # toast (claude-notify.sh) still fires for it.
             *) exit 0 ;;
         esac
         ;;
