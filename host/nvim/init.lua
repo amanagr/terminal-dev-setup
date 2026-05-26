@@ -150,6 +150,25 @@ local function place_diff_signs(win)
     end)
 end
 
+-- Default focus on open should be the diff content, not the file-list panel.
+-- diffview opens the first file with focus=false, so the cursor stays in the
+-- panel; a plain focus in view_opened loses a race with that async open (which
+-- re-asserts panel focus — verified). So we arm a one-shot here and fire it from
+-- the DiffviewDiffBufWinEnter autocmd below, which runs once the diff windows
+-- are populated and wins the race.
+local pending_diff_focus = false
+local function focus_additions_win()
+    -- Rightmost diff window = the additions ("new") side; j/k scroll both panes.
+    local target, best = nil, -1
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[w].diff then
+            local col = vim.api.nvim_win_get_position(w)[2]
+            if col > best then best, target = col, w end
+        end
+    end
+    if target then vim.api.nvim_set_current_win(target) end
+end
+
 -- Single-commit review navigation. The Zed "Browse commit" task sets
 -- g:review_commit; [C/]C step to the older parent / newer child commit (toward
 -- HEAD) and re-open the diff in place. q closes the review — and quits this
@@ -204,19 +223,18 @@ require("lazy").setup({
                 -- On open, focus the additions (right-most) diff window so j/k
                 -- scroll both panes together (they're scrollbind-linked in diff mode).
                 view_opened = function()
+                    -- Arm the one-shot diff-focus; the DiffviewDiffBufWinEnter
+                    -- autocmd re-asserts it after the diff windows populate
+                    -- (beating diffview's panel-focusing async file-open).
+                    pending_diff_focus = true
                     vim.schedule(function()
                         -- diffview sets dull diff colors on open; restyle them
                         -- (vivid bg, no fg) so treesitter shows on changed lines.
                         style_diff_hl()
-                        local target, best = nil, -1
                         for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-                            if vim.wo[w].diff then
-                                place_diff_signs(w)
-                                local col = vim.api.nvim_win_get_position(w)[2]
-                                if col > best then best, target = col, w end
-                            end
+                            if vim.wo[w].diff then place_diff_signs(w) end
                         end
-                        if target then vim.api.nvim_set_current_win(target) end
+                        focus_additions_win() -- best-effort; the autocmd re-asserts
                     end)
                 end,
             },
@@ -282,6 +300,28 @@ vim.api.nvim_create_autocmd("User", {
             for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
                 if vim.wo[w].diff then place_diff_signs(w) end
             end
+            -- One-shot: land the cursor in the diff content on open, not the
+            -- file-list panel. Cleared so later file switches keep panel focus
+            -- when you're navigating there.
+            if pending_diff_focus then
+                pending_diff_focus = false
+                focus_additions_win()
+            end
         end)
+    end,
+})
+
+-- The commit-log popup (opened with L / Shift+L) is a float with no q-mapping,
+-- so q would just start a macro recording. Bind q there to close the popup (the
+-- buffer is bufhidden=wipe, so :close discards it). NB: key off BufWinEnter, not
+-- FileType — diffview's Panel:init_buffer sets filetype BEFORE naming the
+-- buffer, so at FileType time the name is empty and wouldn't match. By
+-- BufWinEnter the buffer is named and shown in the float.
+vim.api.nvim_create_autocmd("BufWinEnter", {
+    callback = function(ev)
+        if vim.api.nvim_buf_get_name(ev.buf):match("/log/%d+/commit_log$") then
+            vim.keymap.set("n", "q", "<cmd>close<CR>",
+                { buffer = ev.buf, nowait = true, desc = "Close commit log popup" })
+        end
     end,
 })

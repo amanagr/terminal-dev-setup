@@ -22,7 +22,10 @@ per-commit reviews via a `git-command` task that runs
 `nvim -c "DiffviewOpen <sha>^..<sha>"`. All of it lives in `nvim/init.lua`:
 
 - **diffview.nvim** — file-list panel + side-by-side, opens focused on the
-  additions pane (`view_opened` hook), `L` shows the commit message.
+  additions diff pane (not the file-list panel — a one-shot armed in
+  `view_opened`, fired from the `DiffviewDiffBufWinEnter` autocmd to beat
+  diffview's panel-focusing async open). `L` shows the commit message in a
+  float; `q` closes that float (and closes the review elsewhere).
 - **treesitter** (nvim-treesitter `main` branch) — syntax highlighting that
   survives diff mode, including on changed lines. Needs the `tree-sitter` CLI
   to compile parsers (`bash` isn't bundled in nvim 0.12); they install on
