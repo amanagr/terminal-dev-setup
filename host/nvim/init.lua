@@ -119,6 +119,35 @@ local function style_diff_hl()
     vim.api.nvim_set_hl(0, "DiffText",   { bg = "#2b6f3d" }) -- changed words (emphasis)
     vim.api.nvim_set_hl(0, "DiffChange", { bg = "#16361f" }) -- changed lines
     vim.api.nvim_set_hl(0, "DiffDelete", { bg = "#5e2630" }) -- removed lines / fill
+    -- gutter change-bar colors (brighter accents than the line backgrounds)
+    vim.api.nvim_set_hl(0, "DiffAddSign",    { fg = "#3fb950" })
+    vim.api.nvim_set_hl(0, "DiffChangeSign", { fg = "#d29922" })
+    vim.api.nvim_set_hl(0, "DiffDeleteSign", { fg = "#f85149" })
+end
+
+-- Gutter change-bar: a colored ▎ in the sign column on every added/changed/
+-- removed line of a diff window, so you can see at a glance (and while
+-- scrolling) where changes fall across the file. diff_hlID() classifies each
+-- line; signs are extmarks scoped to one namespace so they're cheap to redraw.
+local diff_sign_ns = vim.api.nvim_create_namespace("diffview_change_signs")
+local function place_diff_signs(win)
+    if not (win and vim.api.nvim_win_is_valid(win) and vim.wo[win].diff) then return end
+    vim.wo[win].signcolumn = "yes"
+    local buf = vim.api.nvim_win_get_buf(win)
+    vim.api.nvim_buf_clear_namespace(buf, diff_sign_ns, 0, -1)
+    vim.api.nvim_win_call(win, function()
+        for l = 1, vim.api.nvim_buf_line_count(buf) do
+            local id = vim.fn.diff_hlID(l, 1)
+            if id ~= 0 then
+                local name = vim.fn.synIDattr(id, "name")
+                local hl = name == "DiffDelete" and "DiffDeleteSign"
+                    or name == "DiffAdd" and "DiffAddSign"
+                    or "DiffChangeSign"
+                pcall(vim.api.nvim_buf_set_extmark, buf, diff_sign_ns, l - 1, 0,
+                    { sign_text = "▎", sign_hl_group = hl })
+            end
+        end
+    end)
 end
 
 require("lazy").setup({
@@ -147,6 +176,7 @@ require("lazy").setup({
                         local target, best = nil, -1
                         for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
                             if vim.wo[w].diff then
+                                place_diff_signs(w)
                                 local col = vim.api.nvim_win_get_position(w)[2]
                                 if col > best then best, target = col, w end
                             end
@@ -199,3 +229,16 @@ vim.cmd.colorscheme("github_dark")
 -- Re-apply diff colors after any colorscheme change (see style_diff_hl above).
 vim.api.nvim_create_autocmd("ColorScheme", { callback = style_diff_hl })
 style_diff_hl()
+
+-- Re-draw the gutter change-bars when diffview swaps in a new diff buffer
+-- (e.g. switching files with <tab>), not just on the initial view_opened.
+vim.api.nvim_create_autocmd("User", {
+    pattern = "DiffviewDiffBufWinEnter",
+    callback = function()
+        vim.schedule(function()
+            for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                if vim.wo[w].diff then place_diff_signs(w) end
+            end
+        end)
+    end,
+})
