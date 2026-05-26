@@ -49,6 +49,7 @@ from it, it's now unused and safe to delete.)
 | `ghostty/config` | `~/.config/ghostty/config` |
 | `zed/tasks.json` | `~/.config/zed/tasks.json` |
 | `zed/settings.json` | `~/.config/zed/settings.json` *(Zed rewrites this live when you change settings in its UI — re-capture when it drifts)* |
+| `zed/keymap.json` | `~/.config/zed/keymap.json` *(experimental Enter→diffview binding)* |
 | `claude-settings.json` | `~/.claude/settings.json` |
 | `bin/claude-tmux-state.sh` | `~/.local/bin/claude-tmux-state.sh` *(chmod +x)* |
 | `bin/claude-tmux-status.sh` | `~/.local/bin/claude-tmux-status.sh` *(chmod +x)* |

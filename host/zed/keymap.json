@@ -1,0 +1,15 @@
+// Zed keybindings → deployed to ~/.config/zed/keymap.json
+// Docs: https://zed.dev/docs/key-bindings
+[
+    // EXPERIMENTAL: Enter on a commit in the Git Graph runs the diffview review
+    // task instead of Zed's native commit view. git-command tasks are officially
+    // context-menu-only, so this relies on Zed populating $ZED_GIT_SHA for a
+    // key-spawned task. If it doesn't, Enter will run an empty-SHA task (and
+    // shadow the default open-commit) — delete this block to restore default.
+    {
+        "context": "GitGraph",
+        "bindings": {
+            "enter": ["task::Spawn", { "task_name": "Browse commit $ZED_GIT_SHA_SHORT (diffview)", "reveal_target": "center" }]
+        }
+    }
+]
