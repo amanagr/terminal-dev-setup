@@ -140,6 +140,13 @@ require("lazy").setup({
                         if target then vim.api.nvim_set_current_win(target) end
                     end)
                 end,
+                -- Treesitter highlighting composes with diff mode, so syntax
+                -- shows on changed lines too (regex :syntax doesn't reliably).
+                -- nvim 0.12's bundled parsers cover lua/py/js/ts/json/yaml/…;
+                -- pcall falls back to regex syntax for langs without a parser.
+                diff_buf_read = function(bufnr)
+                    pcall(vim.treesitter.start, bufnr)
+                end,
             },
             keymaps = {
                 -- L opens the commit-message popup from the diff panes too,
