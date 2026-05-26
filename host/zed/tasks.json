@@ -5,11 +5,13 @@
     // "Browse commit … (diffview)". The `git-command` tag puts the entry in
     // that context menu and exposes $ZED_GIT_SHA. It opens the commit's diff in
     // nvim + diffview (treesitter syntax, vivid colors, gutter change-bars) in
-    // the editor area, and quits + clears the tab when you close the view.
+    // the editor area. Inside: `q` closes (quits nvim + clears this tab),
+    // `]C`/`[C` step to the next/previous commit. `g:review_commit` is set so
+    // that navigation knows which commit it's on.
     // See ../nvim/init.lua and the "Diff review" section in ../CLAUDE.md.
     {
         "label": "Browse commit $ZED_GIT_SHA_SHORT (diffview)",
-        "command": "nvim -c \"autocmd User DiffviewViewClosed ++once qa\" -c \"DiffviewOpen $ZED_GIT_SHA^..$ZED_GIT_SHA\"",
+        "command": "nvim -c \"let g:review_commit = '$ZED_GIT_SHA'\" -c \"DiffviewOpen $ZED_GIT_SHA^..$ZED_GIT_SHA\"",
         "tags": ["git-command"],
         "reveal_target": "center",
         "hide": "on_success"

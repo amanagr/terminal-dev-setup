@@ -150,6 +150,41 @@ local function place_diff_signs(win)
     end)
 end
 
+-- Single-commit review navigation. The Zed "Browse commit" task sets
+-- g:review_commit; [C/]C step to the older parent / newer child commit (toward
+-- HEAD) and re-open the diff in place. q closes the review — and quits this
+-- nvim when it was launched solely for the review (g:review_commit set).
+local function review_open(sha)
+    vim.g.review_commit = sha
+    pcall(vim.cmd, "DiffviewClose") -- close current view first (no quit) to avoid stacking tabs
+    vim.schedule(function() vim.cmd("DiffviewOpen " .. sha .. "^.." .. sha) end)
+end
+
+local function review_nav(dir)
+    local cur = vim.g.review_commit
+    if not cur or cur == "" then
+        vim.notify("No commit under review", vim.log.levels.WARN)
+        return
+    end
+    local cmd = dir == "prev"
+        and { "git", "rev-parse", "--verify", "--quiet", cur .. "~1" }
+        or { "git", "rev-list", "--reverse", "--ancestry-path", cur .. "..HEAD" }
+    local target = (vim.fn.systemlist(cmd) or {})[1]
+    if target and target:match("^%x%x%x+$") then
+        review_open(target)
+    else
+        vim.notify(("No %s commit"):format(dir == "prev" and "older" or "newer"), vim.log.levels.INFO)
+    end
+end
+
+local function review_close()
+    if vim.g.review_commit then
+        vim.cmd("qa") -- launched for review → quit nvim (Zed clears the tab)
+    else
+        pcall(vim.cmd, "DiffviewClose") -- interactive nvim → just close the diff
+    end
+end
+
 require("lazy").setup({
     { "projekt0n/github-nvim-theme", name = "github-theme", priority = 1000 },
     { "mustache/vim-mustache-handlebars", ft = { "handlebars", "html.handlebars", "mustache", "html.mustache" } },
@@ -186,10 +221,18 @@ require("lazy").setup({
                 end,
             },
             keymaps = {
-                -- L opens the commit-message popup from the diff panes too,
-                -- not just the file-tree panel.
+                -- q closes the review; ]C/[C step to the next/previous commit;
+                -- L shows the commit message — in both the diff and the panel.
                 view = {
+                    { "n", "q", review_close, { desc = "Close review" } },
+                    { "n", "]C", function() review_nav("next") end, { desc = "Next (newer) commit" } },
+                    { "n", "[C", function() review_nav("prev") end, { desc = "Prev (older) commit" } },
                     { "n", "L", function() require("diffview.actions").open_commit_log() end, { desc = "Open the commit log" } },
+                },
+                file_panel = {
+                    { "n", "q", review_close, { desc = "Close review" } },
+                    { "n", "]C", function() review_nav("next") end, { desc = "Next (newer) commit" } },
+                    { "n", "[C", function() review_nav("prev") end, { desc = "Prev (older) commit" } },
                 },
             },
         },
