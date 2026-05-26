@@ -1,17 +1,40 @@
 # host/ — macOS dev configs
 
 These files configure the local Mac: tmux, zsh + oh-my-zsh, Starship,
-Ghostty, a **slim Neovim** (themes + lualine + handlebars syntax — kept
-around as a fallback), and Claude with the tmux-state-tracking hooks
-that drive the pulsing-dot status glyph.
+Ghostty, a **Neovim diff reviewer** (themes + lualine + handlebars, plus a
+diffview-based commit-review setup — see [Diff review](#diff-review-nvim--diffview)),
+and Claude with the tmux-state-tracking hooks that drive the pulsing-dot
+status glyph.
 
-Primary editor on the host is **VSCode** (with the Claude CLI in
-VSCode's integrated terminal). Real code editing happens there — not
-in this nvim config and not in the VM.
+Primary editor on the host is **VSCode**; commit diffs are reviewed in
+**Zed** (whose Git Graph launches nvim+diffview). Real code *editing* happens
+in VSCode — not in this nvim config and not in the VM.
 
 Also works on modern Linux distros (PopOS, Ubuntu 24.04+) — the few
 OS-specific bits (`copy-command pbcopy`, terminal-notifier fallback chain)
 are guarded.
+
+## Diff review (nvim + diffview)
+
+The host nvim's main job is **reviewing commit diffs**, not editing.
+`<leader>gl` opens the current branch vs `main`; Zed's Git Graph launches
+per-commit reviews via a `git-command` task that runs
+`nvim -c "DiffviewOpen <sha>^..<sha>"`. All of it lives in `nvim/init.lua`:
+
+- **diffview.nvim** — file-list panel + side-by-side, opens focused on the
+  additions pane (`view_opened` hook), `L` shows the commit message.
+- **treesitter** (nvim-treesitter `main` branch) — syntax highlighting that
+  survives diff mode, including on changed lines. Needs the `tree-sitter` CLI
+  to compile parsers (`bash` isn't bundled in nvim 0.12); they install on
+  first launch via `require("nvim-treesitter").install`.
+- **`style_diff_hl()`** — vivid GitHub-style diff backgrounds, bg-only so the
+  treesitter colors show through, plus brighter gutter-sign accents.
+- **`place_diff_signs()`** — a colored `▎` gutter bar per changed line
+  (green=add / red=delete / amber=change) to scan where changes fall.
+
+The **Zed side** — the `git-command` task, `diff_view_style: "split"`, and the
+`[delta "github-dark"]` gitconfig feature used by the quick non-interactive
+diff — lives in `~/.config/zed/` and `~/.gitconfig`, **not tracked here yet**.
 
 ## Deploy paths
 
@@ -87,8 +110,9 @@ Ruff. Ghostty: install the `ghostty_*_amd64_24.04.deb` from
 - `chsh -s /bin/zsh` (macOS already defaults to it; harmless to confirm).
 - Inside tmux: `prefix + I` (capital I) to fetch the plugins listed at
   the bottom of `tmux.conf`.
-- First nvim launch installs lazy.nvim and the (small) plugin set, then
-  applies the github theme.
+- First nvim launch installs lazy.nvim + the plugin set and compiles the
+  treesitter parsers (≈20, via the `tree-sitter` CLI — a one-time minute or
+  two, async so the editor stays usable), then applies the github theme.
 
 ## Hardware quirks
 
