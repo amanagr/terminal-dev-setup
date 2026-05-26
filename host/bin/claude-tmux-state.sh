@@ -13,8 +13,8 @@
 # for tools that don't need permission — state is already `working`.
 #
 # Hook JSON is read from stdin and (for `notification`) inspected for
-# `notification_type` to map permission_prompt/elicitation_dialog →
-# permission, idle_prompt → idle.
+# `notification_type`: permission_prompt → permission, idle_prompt → idle.
+# elicitation_dialog (AskUserQuestion) is deliberately ignored — see below.
 #
 # State is scoped to the pane (not the window) so two claude panes in
 # the same tmux window don't stomp each other's state — a finishing
@@ -52,8 +52,12 @@ case "$event" in
     notification)
         ntype=$(jq -r '.notification_type // empty' <<<"$payload" 2>/dev/null || true)
         case "$ntype" in
-            permission_prompt|elicitation_dialog) state=permission ;;
+            permission_prompt) state=permission ;;
             idle_prompt) state=idle ;;
+            # elicitation_dialog (AskUserQuestion) deliberately falls through:
+            # nothing clears it until the next PreToolUse/Stop, so a permission
+            # ⚠ would linger through the whole reply after the answer. Leave the
+            # pane in its current (working) state instead.
             *) exit 0 ;;
         esac
         ;;
