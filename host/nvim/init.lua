@@ -120,7 +120,36 @@ require("lazy").setup({
     } },
 
     { "nvim-tree/nvim-web-devicons", lazy = true },
-    { "sindrets/diffview.nvim", cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" }, dependencies = { "nvim-tree/nvim-web-devicons" } },
+    {
+        "sindrets/diffview.nvim",
+        cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh", "DiffviewFileHistory" },
+        dependencies = { "nvim-tree/nvim-web-devicons" },
+        opts = {
+            hooks = {
+                -- On open, focus the additions (right-most) diff window so j/k
+                -- scroll both panes together (they're scrollbind-linked in diff mode).
+                view_opened = function()
+                    vim.schedule(function()
+                        local target, best = nil, -1
+                        for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                            if vim.wo[w].diff then
+                                local col = vim.api.nvim_win_get_position(w)[2]
+                                if col > best then best, target = col, w end
+                            end
+                        end
+                        if target then vim.api.nvim_set_current_win(target) end
+                    end)
+                end,
+            },
+            keymaps = {
+                -- L opens the commit-message popup from the diff panes too,
+                -- not just the file-tree panel.
+                view = {
+                    { "n", "L", function() require("diffview.actions").open_commit_log() end, { desc = "Open the commit log" } },
+                },
+            },
+        },
+    },
 }, {
     checker = { enabled = false },
     change_detection = { notify = false },
@@ -130,3 +159,13 @@ require("github-theme").setup({
     options = { transparent = true, styles = { comments = "italic" } },
 })
 vim.cmd.colorscheme("github_dark")
+
+-- Diffview: drop DiffText's near-white foreground so syntax token colors show
+-- through on changed lines (keep its subtle background). Re-applied whenever
+-- the colorscheme changes.
+local function fix_diff_text_hl()
+    local t = vim.api.nvim_get_hl(0, { name = "DiffText" })
+    vim.api.nvim_set_hl(0, "DiffText", { bg = t.bg })
+end
+vim.api.nvim_create_autocmd("ColorScheme", { callback = fix_diff_text_hl })
+fix_diff_text_hl()
